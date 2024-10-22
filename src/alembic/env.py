@@ -60,7 +60,6 @@ def run_migrations_offline() -> None:
 
     """
     url = create_database_url().render_as_string(hide_password=False)
-    print(url)
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -82,7 +81,6 @@ def run_migrations_online() -> None:
     """
     cfg = config.get_section(config.config_ini_section, {})
     url = create_database_url().render_as_string(hide_password=False)
-    print(url)
     cfg['sqlalchemy.url'] = url
     connectable = engine_from_config(
         cfg,
