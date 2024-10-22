@@ -5,8 +5,15 @@ Data model for the GA floor height project. Includes;
 - Command line tool to support working with the data model
 - Docker files for launching suitable environment
 
+Schema for the Floor Heights datamodel is shown below.
+![Floor Heights dataa model schema diagram](./docs/floorheights_schema.png)
+
 
 ## Getting started
+
+Create the `.env` file, this includes all the environment variables used by the application. The default values in this example file should be changed (password at least).
+
+    cp .env .env.example
 
 Build the docker images
 
@@ -16,7 +23,7 @@ Startup the database (Postgres) container
 
     docker compose up
 
-Apply all database migrations, this will build the data model tables
+Apply all database migrations, this will create the data model tables in the database.
 
     docker compose run app alembic upgrade head
 
@@ -33,9 +40,9 @@ Run the following command to automatically generate a new migration script.
 
     docker compose run app alembic revision --autogenerate -m "notes on migration changes"
 
-This command will generate a new file in ['versions'](./src/alembic/versions/). This should be
-checked over to ensure it is as expected. For some migrations, for example where data may need
-to be migrated between tables, custom code will need to be included in the migration. **Although
+This command will generate a new file in [`versions`](./src/alembic/versions/). This should be
+checked over to ensure it is as expected. Some migrations, for example where data may need
+to be migrated between tables, will require custom code. **Although
 programatically generated, all migration scripts should be included in git.**
 
 To update the database with this new migration run the following. This will run all pending
