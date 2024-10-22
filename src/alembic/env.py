@@ -38,7 +38,9 @@ target_metadata = Base.metadata
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
 
-
+# Use this function to filter what tables are part of the data model. PostGIS
+# includes many tables, and if we don't filter these out Alembic migrations
+# will include code to drop all these PostGIS tables
 def include_name(name, type_, parent_names):
     if type_ == "table":
         return name in target_metadata.tables
