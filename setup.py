@@ -13,7 +13,9 @@ setup(
         'click',
         'SQLAlchemy',
         'psycopg2-binary',
-        'alembic'
+        'alembic',
+        'GeoAlchemy2',
+        'python-dotenv',
     ],
     entry_points={
         'console_scripts': [
