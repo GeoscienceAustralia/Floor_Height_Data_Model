@@ -78,7 +78,11 @@ class FloorMeasure(Base):
     method = relationship('Method')
 
     # Many-to-many relationship to Dataset
-    datasets = relationship('Dataset', secondary=floor_measure_dataset_association)
+    datasets = relationship(
+        'Dataset',
+        secondary=floor_measure_dataset_association,
+        back_populates='floor_measures'
+    )
 
 
 class Method(Base):
@@ -95,7 +99,11 @@ class Dataset(Base):
     source = Column(String, nullable=True)
 
     # Many-to-many relationship to FloorMeasure
-    floor_measures = relationship('FloorMeasure', secondary=floor_measure_dataset_association)
+    floor_measures = relationship(
+        'FloorMeasure',
+        secondary=floor_measure_dataset_association,
+        back_populates='datasets'
+    )
 
 
 # Database connection setup
