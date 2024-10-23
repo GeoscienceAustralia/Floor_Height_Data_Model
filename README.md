@@ -11,7 +11,6 @@ Data model for the GA floor height project. Includes;
 
 
 ## Getting started
-
 Create the `.env` file, this includes all the environment variables used by the application. The default values in this example file should be changed (password at least).
 
     cp .env .env.example
@@ -32,6 +31,44 @@ Some dummy data can then be added using the following commands (for test purpose
 
     docker compose run app  python -m floorheights.datamodel.cli create-dummy-address-point
     docker compose run app  python -m floorheights.datamodel.cli create-dummy-building
+
+
+## Using as a library
+The data model can be installed as used as a library. The following steps show one possible way to do this.
+
+The database host must be running, and have floor heights data inserted.
+
+Ensure the following environment variables are set. This can be done using environment variables, or a .env file
+- POSTGRES_USER - user with access to database
+- POSTGRES_PASSWORD - password for user
+- POSTGRES_DB - name of the database
+- POSTGRES_HOST - database hostname (e.g.; localhost if running postgres locally)
+
+Create and activate a conda environment
+
+    conda create -n floor_heights_test python=3.10
+    conda activate floor_heights_test
+
+Install an editable version of the floorheights-datamodel package. Assumes this repo has been cloned already. This command should install all necessary dependencies, if that process fails install dependencies from the requirements.txt using pip.
+
+    pip install -e .
+
+Create a `simple_select.py` file containing the following code. File can be found in [`./src/examples`](./src/examples/)
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+    from floorheights.datamodel.models import engine, AddressPoint
+
+    session = Session(engine)
+
+    sel_address_points = select(AddressPoint).limit(10)
+
+    for ap in session.scalars(sel_address_points):
+        print(str(ap))
+
+Run the script. This will list up to 10 address points that have been added to the database.
+
+    python simple_select.py
 
 
 ## Changing data model schema

@@ -41,6 +41,9 @@ class AddressPoint(Base):
         back_populates='address_points'
     )
 
+    def __repr__(self) -> str:
+        return f"AddressPoint(id={self.id!r}, address={self.address!r}, location={self.location!r})"
+
 
 class Building(Base):
     __tablename__ = 'building'
