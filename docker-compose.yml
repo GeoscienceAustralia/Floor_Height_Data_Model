@@ -18,7 +18,7 @@ services:
       - postgres
     environment:
       - POSTGRES_HOST=postgres
-    command: ["python", "app/cli.py"]
+    command: ["python", "-m", "floorheights.datamodel.cli"]
 
 volumes:
   postgres_data:
