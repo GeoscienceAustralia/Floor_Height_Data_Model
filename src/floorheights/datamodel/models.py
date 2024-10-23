@@ -4,6 +4,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+import uuid
 
 from floorheights.datamodel.db_utils import create_database_url
 
@@ -29,7 +30,7 @@ floor_measure_dataset_association = Table(
 
 class AddressPoint(Base):
     __tablename__ = 'address_point'
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     address = Column(String, nullable=False)
     location = Column(Geometry(geometry_type='POINT'), nullable=False)
 
@@ -43,7 +44,7 @@ class AddressPoint(Base):
 
 class Building(Base):
     __tablename__ = 'building'
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     outline = Column(Geometry(geometry_type='POLYGON'), nullable=False)
     height_ahd = Column(Float, nullable=False)
 
@@ -60,7 +61,7 @@ class Building(Base):
 
 class FloorMeasure(Base):
     __tablename__ = 'floor_measure'
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     storey = Column(Integer, nullable=False)
     height = Column(Float, nullable=False)
     accuracy_measure = Column(Float, nullable=False)
@@ -82,13 +83,13 @@ class FloorMeasure(Base):
 
 class Method(Base):
     __tablename__ = 'method'
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
 
 
 class Dataset(Base):
     __tablename__ = 'dataset'
-    id = Column(UUID(as_uuid=True), primary_key=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     source = Column(String, nullable=True)
