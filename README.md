@@ -1,11 +1,12 @@
 # GA Floor Height Data Model
 Data model for the GA floor height project. Includes;
-- Model definition defined using ORM (SQLAlchemy)
-- Migration scripts and tools for generating migrations for data model schema changes
+- Model definition
+    - Shown in figure below
+    - Defined using ORM (SQLAlchemy)
+- Migrations and tools for generating migrations based on data model changes
 - Command line tool to support working with the data model
-- Docker files for launching suitable environment
+- Docker files to provide environment for CLI application and database
 
-Schema for the Floor Heights datamodel is shown below.
 ![Floor Heights dataa model schema diagram](./docs/floorheights_schema.png)
 
 
@@ -26,6 +27,11 @@ Startup the database (Postgres) container
 Apply all database migrations, this will create the data model tables in the database.
 
     docker compose run app alembic upgrade head
+
+Some dummy data can then be added using the following commands (for test purposes).
+
+    docker compose run app  python -m floorheights.datamodel.cli create-dummy-address-point
+    docker compose run app  python -m floorheights.datamodel.cli create-dummy-building
 
 
 ## Changing data model schema
