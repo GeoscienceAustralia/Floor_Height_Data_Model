@@ -3,4 +3,4 @@ SQLAlchemy==2.0.36
 GeoAlchemy2==0.15.2
 psycopg2-binary==2.9.10
 alembic==1.13.3
-
+python-dotenv==1.0.1

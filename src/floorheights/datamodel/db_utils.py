@@ -4,7 +4,11 @@ Utilities for connecting to the database
 
 import os
 from sqlalchemy import URL
+from dotenv import load_dotenv, find_dotenv
 
+# Load env vars from .env file
+# This is done to support local (non-docker) development environments
+load_dotenv(find_dotenv())
 
 def create_database_url() -> URL:
     """General a DB url that will connect to the postgres container
