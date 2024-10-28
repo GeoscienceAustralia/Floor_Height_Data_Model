@@ -31,6 +31,7 @@ floor_measure_dataset_association = Table(
 class AddressPoint(Base):
     __tablename__ = 'address_point'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    gnaf_id = Column(String(15), nullable=True)
     address = Column(String, nullable=False)
     location = Column(Geometry(geometry_type='POINT'), nullable=False)
 
