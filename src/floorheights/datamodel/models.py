@@ -33,7 +33,7 @@ class AddressPoint(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     gnaf_id = Column(String(15), nullable=True)
     address = Column(String, nullable=False)
-    location = Column(Geometry(geometry_type='POINT'), nullable=False)
+    location = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
 
     # Many-to-Many relationship with Building
     buildings = relationship(
@@ -49,7 +49,7 @@ class AddressPoint(Base):
 class Building(Base):
     __tablename__ = 'building'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    outline = Column(Geometry(geometry_type='POLYGON'), nullable=False)
+    outline = Column(Geometry(geometry_type='POLYGON', srid=4326), nullable=False)
     height_ahd = Column(Float, nullable=False)
 
     # Many-to-Many relationship with AddressPoint
