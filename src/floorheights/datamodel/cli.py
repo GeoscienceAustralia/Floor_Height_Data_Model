@@ -45,13 +45,14 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--input", "infile", type=click.Path(), help="Input file path")
-def ingest_address_points(infile):
+@click.option("-i", "--input", "infile", type=click.Path(), help="Input file path.")
+@click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
+def ingest_address_points(infile, chunksize):
     """Ingest address points"""
     session = SessionLocal()
     engine = session.get_bind()
 
-    click.echo("Loading GeoDatabase...")
+    click.echo("Loading Geodatabase...")
     address = gpd.read_file(infile, columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS"])
     address = address.to_crs(4326)
 
@@ -66,8 +67,8 @@ def ingest_address_points(infile):
         engine,
         schema="public",
         if_exists="append",
-        index=True,
-        chunksize=1000000,
+        index=False,
+        chunksize=chunksize,
     )
 
     click.echo("Address ingestion complete")
