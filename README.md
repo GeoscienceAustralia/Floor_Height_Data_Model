@@ -25,12 +25,12 @@ Startup the database (Postgres) container
 
 Apply all database migrations, this will create the data model tables in the database.
 
-    docker compose run app alembic upgrade head
+    docker compose run --rm app alembic upgrade head
 
 Some dummy data can then be added using the following commands (for test purposes).
 
-    docker compose run app  python -m floorheights.datamodel.cli create-dummy-address-point
-    docker compose run app  python -m floorheights.datamodel.cli create-dummy-building
+    docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-address-point
+    docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-building
 
 
 ## Using as a library
