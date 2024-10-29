@@ -55,9 +55,6 @@ def ingest_address_points(infile):
     address = gpd.read_file(infile, columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS"])
     address = address.to_crs(4326)
 
-    address["id"] = address.apply(lambda x: uuid.uuid4(), axis=1)
-    address = address.set_index("id")
-
     address = address.rename(
         columns={"COMPLETE_ADDRESS": "address", "ADDRESS_DETAIL_PID": "gnaf_id"}
     )
