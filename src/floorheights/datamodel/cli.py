@@ -1,4 +1,6 @@
 import click
+import geopandas as gpd
+import uuid
 from sqlalchemy.orm import Session
 from floorheights.datamodel.models import AddressPoint, Building, SessionLocal
 
@@ -40,6 +42,38 @@ def create_dummy_building():
     session.commit()
 
     click.echo("Dummy building added")
+
+
+@click.command()
+@click.option("-i", "--input", "infile", type=click.Path(), help="Input file path")
+def ingest_address_points(infile):
+    """Ingest address points"""
+    session = SessionLocal()
+    engine = session.get_bind()
+
+    click.echo("Loading GeoDatabase...")
+    address = gpd.read_file(infile, columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS"])
+    address = address.to_crs(4326)
+
+    address["id"] = address.apply(lambda x: uuid.uuid4(), axis=1)
+    address = address.set_index("id")
+
+    address = address.rename(
+        columns={"COMPLETE_ADDRESS": "address", "ADDRESS_DETAIL_PID": "gnaf_id"}
+    )
+    address = address.rename_geometry("location")
+
+    click.echo("Copying to PostgreSQL...")
+    address.to_postgis(
+        "address_point",
+        engine,
+        schema="public",
+        if_exists="append",
+        index=True,
+        chunksize=1000000,
+    )
+
+    click.echo("Address ingestion complete")
 
 
 cli.add_command(create_dummy_address_point)
