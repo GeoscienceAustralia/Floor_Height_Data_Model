@@ -27,5 +27,15 @@ services:
       - POSTGRES_HOST=postgres
     command: ["python", "-m", "floorheights.datamodel.cli"]
 
+  martin:
+    image: ghcr.io/maplibre/martin
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - 3000:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
