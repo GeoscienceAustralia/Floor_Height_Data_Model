@@ -78,6 +78,7 @@ def ingest_address_points(infile):
 
 cli.add_command(create_dummy_address_point)
 cli.add_command(create_dummy_building)
+cli.add_command(ingest_address_points)
 
 
 if __name__ == '__main__':
