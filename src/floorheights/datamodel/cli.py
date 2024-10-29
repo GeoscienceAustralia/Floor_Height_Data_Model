@@ -13,8 +13,9 @@ def create_dummy_address_point():
     """Create dummy address point"""
     session = SessionLocal()
     address = AddressPoint(
-        address='2 Bentley Pl, Wagga Wagga',
-        location='SRID=4326;POINT(147.37777 -35.114555)'
+        gnaf_id='GANSW717206574',
+        address='2 BENTLEY PLACE, WAGGA WAGGA, NSW 2650',
+        location='SRID=7844;POINT(147.377214 -35.114780)'
     )
     session.add(address)
     session.commit()
