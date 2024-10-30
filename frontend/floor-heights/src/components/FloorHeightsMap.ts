@@ -1,4 +1,4 @@
-import { Map, Popup } from 'maplibre-gl';
+import { Map, Popup, LngLatBoundsLike } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const TILESERVER_LAYER_DETAILS = [
@@ -7,10 +7,12 @@ const TILESERVER_LAYER_DETAILS = [
 ];
 
 export default class FloorHeightsMap {
+  map: Map | null;
+
   constructor() {
-    this.map = null
+    this.map = null;
   }
-  
+
   createMap() {
     return new Promise((resolve) => {
       this.map = new Map({
@@ -30,7 +32,7 @@ export default class FloorHeightsMap {
         // add all the layers as sources, this doesn't mean they get displayed
         for (const layerDetails of TILESERVER_LAYER_DETAILS) {
           const layerName = layerDetails.name;
-          this.map.addSource(layerName, {
+          this.map?.addSource(layerName, {
               type: 'vector',
               tiles: [
                   `${window.location.href}maps/${layerName}/{z}/{x}/{y}`
@@ -41,21 +43,21 @@ export default class FloorHeightsMap {
           });
         }
 
-        return resolve(this.map)
+        return resolve(this.map);
       });
       
     })
   }
   
-  fitBounds (bounds) {
-    this.map.fitBounds(bounds, {
+  fitBounds (bounds: LngLatBoundsLike) {
+    this.map?.fitBounds(bounds, {
       padding: 60
-    })
+    });
   }
   
-  setBuildingOutlineVisibility(visible) {
+  setBuildingOutlineVisibility(visible: boolean) {
     if (visible) {
-      this.map.addLayer({
+      this.map?.addLayer({
         'id': 'building_fh',
         'type': 'line',
         'source': 'building',
@@ -71,15 +73,15 @@ export default class FloorHeightsMap {
       });
 
     } else {
-      if (this.map.getLayer('building_fh')) {
-        this.map.removeLayer('building_fh');
+      if (this.map?.getLayer('building_fh')) {
+        this.map?.removeLayer('building_fh');
       }
     }
   }
   
-  setAddressPointVisibility(visible) {
+  setAddressPointVisibility(visible: boolean) {
     if (visible) {
-      this.map.addLayer({
+      this.map?.addLayer({
         'id': 'address_point',
         'type': 'circle',
         'source': 'address_point',
@@ -90,8 +92,8 @@ export default class FloorHeightsMap {
         }
       });
     } else {
-      if (this.map.getLayer('address_point')) {
-        this.map.removeLayer('address_point');
+      if (this.map?.getLayer('address_point')) {
+        this.map?.removeLayer('address_point');
       }
     }
   }
