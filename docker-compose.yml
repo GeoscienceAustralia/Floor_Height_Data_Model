@@ -31,11 +31,23 @@ services:
     image: ghcr.io/maplibre/martin
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # - RUST_LOG=debug
     ports:
       - 3000:3000
     depends_on:
       postgres:
         condition: service_healthy
+
+  frontend-dev:
+    build:
+      context: ./frontend
+    volumes:
+      - ./frontend/floor-heights:/app
+    ports:
+      - '5173:5173'
+    command: bash -c "npm install && npm run dev -- --host"
+    depends_on:
+      - martin
 
 volumes:
   postgres_data:
