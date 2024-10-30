@@ -65,7 +65,7 @@ export default class FloorHeightsMap {
           'line-cap': 'round'
         },
         'paint': {
-          'line-color': '#ff69b4',
+          'line-color': '#F6511D',
           'line-width': 1
         }
       });
@@ -78,6 +78,21 @@ export default class FloorHeightsMap {
   }
   
   setAddressPointVisibility(visible) {
-
+    if (visible) {
+      this.map.addLayer({
+        'id': 'address_point',
+        'type': 'circle',
+        'source': 'address_point',
+        'source-layer': 'address_point',
+        'paint': {
+          'circle-color': '#3887BE',
+          'circle-radius': 5,
+        }
+      });
+    } else {
+      if (this.map.getLayer('address_point')) {
+        this.map.removeLayer('address_point');
+      }
+    }
   }
 }
