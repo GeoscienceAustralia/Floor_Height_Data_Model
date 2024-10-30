@@ -59,16 +59,16 @@ export default class FloorHeightsMap {
     if (visible) {
       this.map?.addLayer({
         'id': 'building_fh',
-        'type': 'line',
+        'type': 'fill',
         'source': 'building',
         'source-layer': 'building',
         'layout': {
-          'line-join': 'round',
-          'line-cap': 'round'
+
         },
         'paint': {
-          'line-color': '#F6511D',
-          'line-width': 1
+          'fill-color': '#F6511D',
+          'fill-outline-color': '#F6511D',
+          'fill-opacity': 0.4,
         }
       });
 
