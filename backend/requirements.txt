@@ -1,0 +1,4 @@
+# note: these are only the additional dependencies required by the backend server
+# to run this all the dependencies in the base level are still required.
+fastapi==0.115.4
+uvicorn==0.32.0
