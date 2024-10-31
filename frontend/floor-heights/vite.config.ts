@@ -14,10 +14,10 @@ export default defineConfig({
     })],
     server: {
       proxy: {
-        // '/api/': {
-        //   target: 'http://server-dev:80/',
-        //   changeOrigin: false,
-        // },
+        '/api/': {
+          target: 'http://backend-dev:8080/',
+          changeOrigin: false,
+        },
         '/maps/': {
           target: 'http://martin:3000/',
           changeOrigin: false,
