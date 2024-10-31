@@ -1,4 +1,7 @@
-import { Map, Popup, LngLatBoundsLike } from 'maplibre-gl';
+import { Map, Popup, LngLatBoundsLike, MapGeoJSONFeature, LngLatLike, } from 'maplibre-gl';
+
+import { Point} from 'geojson';
+
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const TILESERVER_LAYER_DETAILS = [
@@ -46,9 +49,18 @@ export default class FloorHeightsMap {
         return resolve(this.map);
       });
       
+      this.map.on('click', 'address_point', (e) => {
+        console.log(e);
+        let f = e.features?.[0];
+        let p = f?.geometry as Point;
+        this.map?.flyTo({
+            center: p.coordinates as LngLatLike,
+            zoom: 19
+        });
+      });
     })
   }
-  
+
   fitBounds (bounds: LngLatBoundsLike) {
     this.map?.fitBounds(bounds, {
       padding: 60
@@ -62,16 +74,13 @@ export default class FloorHeightsMap {
         'type': 'fill',
         'source': 'building',
         'source-layer': 'building',
-        'layout': {
-
-        },
+        'layout': {},
         'paint': {
           'fill-color': '#F6511D',
           'fill-outline-color': '#F6511D',
           'fill-opacity': 0.4,
         }
       });
-
     } else {
       if (this.map?.getLayer('building_fh')) {
         this.map?.removeLayer('building_fh');
