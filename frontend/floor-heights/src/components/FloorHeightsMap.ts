@@ -50,13 +50,19 @@ export default class FloorHeightsMap {
       });
       
       this.map.on('click', 'address_point', (e) => {
-        console.log(e);
         let f = e.features?.[0];
-        let p = f?.geometry as Point;
-        this.map?.flyTo({
-            center: p.coordinates as LngLatLike,
-            zoom: 19
-        });
+
+        // // The issue with the following code is that the `flyTo`
+        // // seems to make the map lose focus and click events
+        // // are no longer raised.
+        // let p = f?.geometry as Point;
+        // this.map?.flyTo({
+        //     center: p.coordinates as LngLatLike,
+        //     zoom: 19
+        // });
+
+        // show the links to any buildings when an address point is clicked
+        this.showBuildingLinksForAddress(f?.properties.id);
       });
     })
   }
@@ -80,7 +86,7 @@ export default class FloorHeightsMap {
           'fill-outline-color': '#F6511D',
           'fill-opacity': 0.4,
         }
-      });
+      }, 'address_point');
     } else {
       if (this.map?.getLayer('building_fh')) {
         this.map?.removeLayer('building_fh');
@@ -104,6 +110,37 @@ export default class FloorHeightsMap {
       if (this.map?.getLayer('address_point')) {
         this.map?.removeLayer('address_point');
       }
+      this.hideBuildingLinksForAddress();
     }
   }
+
+  hideBuildingLinksForAddress() {
+    if (this.map?.getLayer('address-to-building-link')) {
+      this.map?.removeLayer('address-to-building-link');
+    }
+    if (this.map?.getSource('address-to-building-link')) {
+      this.map?.removeSource('address-to-building-link');
+    }
+  }
+
+  showBuildingLinksForAddress(addressPointId: string) {
+    // remove the source and layer if it has already been added
+    this.hideBuildingLinksForAddress();
+
+    this.map?.addSource('address-to-building-link', {
+      type: 'geojson',
+      data: `api/address-point-to-building/${addressPointId}/geom/`
+    });
+    this.map?.addLayer({
+      'id': 'address-to-building-link',
+      'type': 'line',
+      'source': 'address-to-building-link',
+      'layout': {},
+      'paint': {
+        'line-color': '#FFB400',
+        'line-width': 4
+      },
+    }, 'address_point');
+  }
+
 }
