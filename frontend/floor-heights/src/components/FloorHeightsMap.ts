@@ -1,4 +1,4 @@
-import { Map, Popup, LngLatBoundsLike, MapGeoJSONFeature, LngLatLike, } from 'maplibre-gl';
+import { Map, LngLatBoundsLike, AddLayerObject } from 'maplibre-gl';
 
 import { Point} from 'geojson';
 
@@ -86,7 +86,7 @@ export default class FloorHeightsMap {
   
   setBuildingOutlineVisibility(visible: boolean) {
     if (visible) {
-      this.map?.addLayer({
+      let buildingLayerDef:AddLayerObject = {
         'id': 'building_fh',
         'type': 'fill',
         'source': 'building',
@@ -97,7 +97,12 @@ export default class FloorHeightsMap {
           'fill-outline-color': '#F6511D',
           'fill-opacity': 0.4,
         }
-      }, 'address_point');
+      };
+      if (this.map?.getLayer('address_point')) {
+        this.map?.addLayer(buildingLayerDef, 'address_point');
+      } else {
+        this.map?.addLayer(buildingLayerDef);
+      }
     } else {
       if (this.map?.getLayer('building_fh')) {
         this.map?.removeLayer('building_fh');
