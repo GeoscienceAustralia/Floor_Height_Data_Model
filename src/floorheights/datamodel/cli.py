@@ -98,16 +98,15 @@ def ingest_buildings(infile, dem, chunksize):
 
     click.echo("Loading building GeoParquet...")
     buildings = gpd.read_parquet(infile.name, columns=["geometry"], bbox=mask_bbox)
-
-    buildings = buildings[buildings.geom_type == 'Polygon']  # Remove multipolygons
+    buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
     
     click.echo("Sampling DEM with buildings...")
     buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
     centroids = [(x, y) for x, y in zip(buildings["geometry"].centroid.x, buildings["geometry"].centroid.y)]
-
     buildings["height_ahd"] = [x[0] for x in dem.sample(centroids)]
+    buildings["height_ahd"] = buildings["height_ahd"].astype(float).round(3)
 
-    buildings = buildings[buildings['height_ahd'] != dem.nodata]  # Remove any buildings sampled with no data
+    buildings = buildings[buildings["height_ahd"] != dem.nodata]  # Remove any buildings that sample no data
     buildings = buildings.to_crs(4326)  # Transform back to WGS84
     buildings = buildings.rename_geometry("outline")
 
