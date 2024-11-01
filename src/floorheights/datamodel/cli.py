@@ -44,7 +44,7 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--input", "infile", type=click.Path(), help="Input file path.")
+@click.option("-i", "--infile", "infile", required=True, type=click.Path(), help="Input address points (Geodatabase) file path.")
 @click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
 def ingest_address_points(infile, chunksize):
     """Ingest address points"""
