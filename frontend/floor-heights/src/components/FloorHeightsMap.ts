@@ -4,6 +4,8 @@ import { Point} from 'geojson';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+import { EventEmitter } from '../util/EventEmitter';
+
 const TILESERVER_LAYER_DETAILS = [
   {name: 'address_point', idField: 'id'},
   {name: 'building', idField: 'id'},
@@ -11,9 +13,11 @@ const TILESERVER_LAYER_DETAILS = [
 
 export default class FloorHeightsMap {
   map: Map | null;
+  emitter: EventEmitter;
 
   constructor() {
     this.map = null;
+    this.emitter = new EventEmitter();
   }
 
   createMap() {
@@ -63,6 +67,13 @@ export default class FloorHeightsMap {
 
         // show the links to any buildings when an address point is clicked
         this.showBuildingLinksForAddress(f?.properties.id);
+
+        this.emitter.emit('addressPointClicked', f?.properties);
+      });
+
+      this.map.on('click', 'building_fh', (e) => {
+        let f = e.features?.[0];
+        this.emitter.emit('buildingClicked', f?.properties);
       });
     })
   }

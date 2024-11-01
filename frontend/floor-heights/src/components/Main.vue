@@ -11,18 +11,39 @@ const map = ref();
 const showAddressPoints = ref(false)
 const showBuildingOutlines = ref(false)
 
+const clickedAddressPoint = ref();
+const clickedBuilding = ref();
+
 onMounted(async () => {
-  map.value = new FloorHeightsMap()
-  await map.value.createMap()
+  clickedAddressPoint.value = null;
+  clickedBuilding.value = null;
+
+  map.value = new FloorHeightsMap();
+  await map.value.createMap();
+
+  map.value.emitter.on('addressPointClicked', onAddressPointClicked);
+  map.value.emitter.on('buildingClicked', onBuildingClicked);
 });
 
 watch(showAddressPoints, async (showAddressPoints, _) => {
-  map.value.setAddressPointVisibility(showAddressPoints)
+  map.value.setAddressPointVisibility(showAddressPoints);
 });
 
 watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
-  map.value.setBuildingOutlineVisibility(showBuildingOutlines)
+  map.value.setBuildingOutlineVisibility(showBuildingOutlines);
 });
+
+const onAddressPointClicked = (clickedObject: any) => {
+  console.log('Address Point clicked:', clickedObject);
+  clickedAddressPoint.value = clickedObject;
+  clickedBuilding.value = null;
+};
+
+const onBuildingClicked = (clickedObject: any) => {
+  console.log('Building clicked:', clickedObject);
+  clickedBuilding.value = clickedObject;
+  clickedAddressPoint.value = null;
+};
 
 
 </script>
@@ -59,10 +80,44 @@ watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
           <Checkbox inputId="showBuildingOutlines" v-model="showBuildingOutlines" :binary="true" />
           <label for="showBuildingOutlines" class="ml-2"> Building Outlines </label>
         </div>
+      </div>      
+    </Panel>
+
+    <Panel v-if="clickedAddressPoint">
+      <template #header>
+        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+          <i class="pi pi-map-marker" style="font-size: 1rem"></i>
+          <span class="font-bold">Address Point</span>
+        </div>
+      </template>
+      <div class="flex flex-col gap-1">
+        <div class="flex flex-col gap-0">
+          <div class="subheading"> Address: </div>
+          <div> {{ clickedAddressPoint.address }} </div>
+        </div>
+        <div class="flex flex-col gap-0">
+          <div class="subheading"> GNAF ID: </div>
+          <div> {{ clickedAddressPoint.gnaf_id }} </div>
+        </div>
       </div>
       
-      
     </Panel>
+
+    <Panel v-if="clickedBuilding">
+      <template #header>
+        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+          <i class="pi pi-building" style="font-size: 1rem"></i>
+          <span class="font-bold">Building</span>
+        </div>
+      </template>
+      <div class="flex flex-col gap-1">
+        <div class="flex flex-col gap-0">
+          <div class="subheading"> Absolute Height (m): </div>
+          <div> {{ clickedBuilding.height_ahd }} </div>
+        </div>
+      </div>
+    </Panel>
+
   </div>
   
   
@@ -82,6 +137,12 @@ watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
   bottom: 20px;
   width: 400px;
   z-index: 1; /* Ensures it stays above the map */
+}
+
+.subheading {
+  color:var(--p-primary-500);
+  font-size: 0.9em;
+  margin-bottom: -4px;
 }
 
 </style>
