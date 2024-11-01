@@ -1,6 +1,6 @@
 import { Map, LngLatBoundsLike, AddLayerObject } from 'maplibre-gl';
 
-import { Point} from 'geojson';
+import { Point, Polygon} from 'geojson';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -55,7 +55,7 @@ export default class FloorHeightsMap {
       
       this.map.on('click', 'address_point', (e) => {
         let f = e.features?.[0];
-
+        this.highlightAddressPoint(f?.geometry as Point);
         // // The issue with the following code is that the `flyTo`
         // // seems to make the map lose focus and click events
         // // are no longer raised.
@@ -73,6 +73,7 @@ export default class FloorHeightsMap {
 
       this.map.on('click', 'building_fh', (e) => {
         let f = e.features?.[0];
+        this.highlightBuilding(f?.geometry as Polygon);
         this.emitter.emit('buildingClicked', f?.properties);
       });
     })
@@ -159,4 +160,62 @@ export default class FloorHeightsMap {
     }, 'address_point');
   }
 
+  hideHighlightedFeature() {
+    if (this.map?.getLayer('highlighted-feature')) {
+      this.map?.removeLayer('highlighted-feature');
+    }
+    if (this.map?.getSource('highlighted-feature')) {
+      this.map?.removeSource('highlighted-feature');
+    }
+  }
+
+  highlightAddressPoint(geometry: Point) {
+    this.hideHighlightedFeature();
+
+    this.map?.addSource('highlighted-feature', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: geometry, // Use the geometry from the clicked feature
+        properties: {}
+      }
+    });
+
+    // Add a new layer to render the geometry
+    this.map?.addLayer({
+      id: 'highlighted-feature',
+      type: 'circle',
+      source: 'highlighted-feature',
+      paint: {
+        'circle-color': '#3887BE',
+        'circle-radius': 14,
+        'circle-blur': 1.0
+      }
+    }, 'address_point');
+  }
+
+  highlightBuilding(geometry: Polygon) {
+    this.hideHighlightedFeature();
+
+    this.map?.addSource('highlighted-feature', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: geometry, // Use the geometry from the clicked feature
+        properties: {}
+      }
+    });
+
+    // Add a new layer to render the geometry
+    this.map?.addLayer({
+      id: 'highlighted-feature',
+      type: 'line',
+      source: 'highlighted-feature',
+      paint: {
+        'line-color': '#F6511D',
+        'line-width': 6,
+        'line-blur': 4
+      }
+    }, 'building_fh');
+  }
 }
