@@ -11,6 +11,10 @@ const TILESERVER_LAYER_DETAILS = [
   {name: 'building', idField: 'id'},
 ];
 
+const COLOR_ADDRESS_POINT: string = '#3887BE';
+const COLOR_BUILDING: string = '#F6511D';
+const COLOR_ADDRESS_BUILDING_LINK: string = '#FFB400';
+
 export default class FloorHeightsMap {
   map: Map | null;
   emitter: EventEmitter;
@@ -94,8 +98,8 @@ export default class FloorHeightsMap {
         'source-layer': 'building',
         'layout': {},
         'paint': {
-          'fill-color': '#F6511D',
-          'fill-outline-color': '#F6511D',
+          'fill-color': COLOR_BUILDING,
+          'fill-outline-color': COLOR_BUILDING,
           'fill-opacity': 0.4,
         }
       };
@@ -119,7 +123,7 @@ export default class FloorHeightsMap {
         'source': 'address_point',
         'source-layer': 'address_point',
         'paint': {
-          'circle-color': '#3887BE',
+          'circle-color': COLOR_ADDRESS_POINT,
           'circle-radius': 5,
         }
       });
@@ -154,7 +158,7 @@ export default class FloorHeightsMap {
       'source': 'address-to-building-link',
       'layout': {},
       'paint': {
-        'line-color': '#FFB400',
+        'line-color': COLOR_ADDRESS_BUILDING_LINK,
         'line-width': 4
       },
     }, 'address_point');
@@ -187,7 +191,7 @@ export default class FloorHeightsMap {
       type: 'circle',
       source: 'highlighted-feature',
       paint: {
-        'circle-color': '#3887BE',
+        'circle-color': COLOR_ADDRESS_POINT,
         'circle-radius': 14,
         'circle-blur': 1.0
       }
@@ -212,7 +216,7 @@ export default class FloorHeightsMap {
       type: 'line',
       source: 'highlighted-feature',
       paint: {
-        'line-color': '#F6511D',
+        'line-color': COLOR_BUILDING,
         'line-width': 6,
         'line-blur': 4
       }
