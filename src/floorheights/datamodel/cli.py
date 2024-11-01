@@ -1,6 +1,5 @@
 import click
 import geopandas as gpd
-import uuid
 from sqlalchemy.orm import Session
 from floorheights.datamodel.models import AddressPoint, Building, SessionLocal
 
@@ -17,7 +16,7 @@ def create_dummy_address_point():
     address = AddressPoint(
         gnaf_id='GANSW717206574',
         address='2 BENTLEY PLACE, WAGGA WAGGA, NSW 2650',
-        location='SRID=7844;POINT(147.377214 -35.114780)'
+        location='SRID=4326;POINT(147.377214 -35.114780)'
     )
     session.add(address)
     session.commit()
