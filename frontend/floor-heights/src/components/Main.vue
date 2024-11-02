@@ -51,15 +51,13 @@ const onBuildingClicked = (clickedObject: any) => {
 <template>
   <div id="map" class="h-full w-full"></div>
   <div id="overlay" class="flex flex-col gap-2">
-    <div class="p-panel">
+    <div class="p-panel" style="background-color: var(--p-primary-color);">
       <div class="flex items-center gap-2" style="padding: var(--p-panel-header-padding);">
-        <!-- <Avatar icon="pi pi-home" class="mr-2" size="large" /> -->
-        <i class="pi pi-home" style="font-size: 2rem"></i>
-        <span class="text-3xl" style="font-weight: 200;">Floor Heights</span>
+        <i class="pi pi-home" style="font-size: 2rem; color: white;"></i>
+        <span class="text-3xl title">Floor Heights</span>
       </div>
     </div>
-    
-    
+
     <Panel>
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
@@ -143,6 +141,12 @@ const onBuildingClicked = (clickedObject: any) => {
   color:var(--p-primary-500);
   font-size: 0.9em;
   margin-bottom: -4px;
+}
+
+.title {
+  font-weight: 700;
+  color: white;
+  letter-spacing: -2px;
 }
 
 </style>
