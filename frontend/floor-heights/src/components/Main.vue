@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
-// import Card from 'primevue/card';
 import Panel from 'primevue/panel';
-import Divider from 'primevue/divider';
-
-
 import FloorHeightsMap from './FloorHeightsMap';
 
 const map = ref();
@@ -115,6 +111,17 @@ const onBuildingClicked = (clickedObject: any) => {
         <div class="flex flex-col gap-0">
           <div class="subheading"> Absolute Height (m): </div>
           <div> {{ clickedBuilding.height_ahd }} </div>
+        </div>
+      </div>
+    </Panel>
+
+    <Panel v-if="!(clickedAddressPoint || clickedBuilding)" >
+      <div class="flex flex-col gap-2">
+        <div class="flex flex-row w-full items-center justify-center content-center gap-2">
+          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+        </div>
+        <div class="flex flex-col gap-1">
+          <div class="opacity-50"> Select address point or building outline to show floor height data. </div>
         </div>
       </div>
     </Panel>
