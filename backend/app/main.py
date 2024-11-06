@@ -84,6 +84,7 @@ def read_source_ids(address_point_id: str, db: sqlalchemy.orm.Session = Depends(
 # TODO: this should really just be based on the SQLAlchemy model
 # instead of redefining it
 class FloorMeasureWeb(BaseModel):
+    id: str
     storey: int
     height: float
     accuracy_measure: float
@@ -108,6 +109,7 @@ def get_floor_height_data(building_id: str, db: sqlalchemy.orm.Session = Depends
     for fm_db in result.floor_measures:
         datasets = [ds.name for ds in fm_db.datasets]
         floor_measure = FloorMeasureWeb(
+            id=str(fm_db.id),
             storey=fm_db.storey,
             height=fm_db.height,
             accuracy_measure=fm_db.accuracy_measure,
