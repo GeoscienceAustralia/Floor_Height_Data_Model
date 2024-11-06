@@ -8,8 +8,8 @@ import Divider from 'primevue/divider';
 import FloorHeightsMap from './FloorHeightsMap';
 
 const map = ref();
-const showAddressPoints = ref(false)
-const showBuildingOutlines = ref(false)
+const showAddressPoints = ref(false);
+const showBuildingOutlines = ref(false);
 
 const clickedAddressPoint = ref();
 const clickedBuilding = ref();
@@ -23,6 +23,9 @@ onMounted(async () => {
 
   map.value.emitter.on('addressPointClicked', onAddressPointClicked);
   map.value.emitter.on('buildingClicked', onBuildingClicked);
+
+  showAddressPoints.value = true;
+  showBuildingOutlines.value = true;
 });
 
 watch(showAddressPoints, async (showAddressPoints, _) => {
