@@ -1,14 +1,22 @@
 <script setup lang="ts">
+import axios from 'axios';
 import { ref, onMounted, watch } from 'vue';
 import Panel from 'primevue/panel';
+import { useToast } from "primevue/usetoast";
 import FloorHeightsMap from './FloorHeightsMap';
+import {FloorMeasure, AddressPoint, Building} from './types';
+import FloorMeasureComponent from './FloorMeasureComponent.vue';
+
+const toast = useToast();
 
 const map = ref();
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
 
-const clickedAddressPoint = ref();
-const clickedBuilding = ref();
+const clickedAddressPoint = ref<AddressPoint | null>(null);
+const clickedBuilding = ref<Building | null>(null);
+
+const clickedFloorMeasures = ref<FloorMeasure[]>([]);
 
 onMounted(async () => {
   clickedAddressPoint.value = null;
@@ -42,14 +50,35 @@ const onBuildingClicked = (clickedObject: any) => {
   console.log('Building clicked:', clickedObject);
   clickedBuilding.value = clickedObject;
   clickedAddressPoint.value = null;
+
+  if (!clickedBuilding.value) return;
+  fetchFloorMeasures(clickedBuilding.value?.id);
 };
 
+const fetchFloorMeasures = async (building_id: string) => {
+  try {
+    const response = await axios.get<FloorMeasure[]>(`api/floor-height-data/${building_id}`);
+    clickedFloorMeasures.value = response.data
+    console.log(clickedFloorMeasures.value);
+  } catch (error) {
+    console.error(`Failed to fetch floor measures for building id ${building_id}`);
+    toast.add(
+      {
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Failed to fetch floor measure data',
+        life: 3000
+      }
+    );
+  }
+}
 
 </script>
 
 <template>
   <div id="map" class="h-full w-full"></div>
   <div id="overlay" class="flex flex-col gap-2">
+    <Toast />
     <div class="p-panel" style="background-color: var(--p-primary-color);">
       <div class="flex items-center gap-2" style="padding: var(--p-panel-header-padding);">
         <i class="pi pi-home" style="font-size: 2rem; color: white;"></i>
@@ -123,6 +152,33 @@ const onBuildingClicked = (clickedObject: any) => {
         <div class="flex flex-col gap-1">
           <div class="opacity-50"> Select address point or building outline to show floor height data. </div>
         </div>
+      </div>
+    </Panel>
+
+    <Panel v-if="clickedBuilding && clickedFloorMeasures.length == 0" >
+      <div class="flex flex-col gap-2">
+        <div class="flex flex-row w-full items-center justify-center content-center gap-2">
+          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+        </div>
+        <div class="flex flex-col gap-1">
+          <div class="opacity-50"> No floor measures found for this building </div>
+        </div>
+      </div>
+    </Panel>
+
+    <Panel v-if="clickedBuilding && clickedFloorMeasures.length != 0" >
+      <template #header>
+        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+          <i class="pi pi-chart-scatter" style="font-size: 1rem"></i>
+          <span class="font-bold">Measures</span>
+        </div>
+      </template>
+      <div class="flex flex-col gap-1">
+        <FloorMeasureComponent
+          v-for="floorMeasure in clickedFloorMeasures"
+          :key="floorMeasure.id"
+          :floor-measure="floorMeasure"
+        />
       </div>
     </Panel>
 

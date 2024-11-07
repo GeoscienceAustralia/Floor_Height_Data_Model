@@ -10,7 +10,9 @@ declare module 'vue' {
     Avatar: typeof import('primevue/avatar')['default']
     Button: typeof import('primevue/button')['default']
     Checkbox: typeof import('primevue/checkbox')['default']
+    FloorMeasureComponent: typeof import('./src/components/FloorMeasureComponent.vue')['default']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     Main: typeof import('./src/components/Main.vue')['default']
+    Toast: typeof import('primevue/toast')['default']
   }
 }
