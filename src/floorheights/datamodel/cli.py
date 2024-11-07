@@ -39,7 +39,8 @@ def create_dummy_building():
             '147.37788066971024 -35.11463666981137, 147.37775733837083 -35.11443775405107, '
             '147.37761655448156 -35.11448724509989))'
         ),
-        height_ahd=20.0
+        min_height_ahd=179.907,
+        max_height_ahd=180.155
     )
     session.add(building)
     session.commit()
