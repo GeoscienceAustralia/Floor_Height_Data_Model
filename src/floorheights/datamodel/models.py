@@ -50,7 +50,8 @@ class Building(Base):
     __tablename__ = 'building'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default="gen_random_uuid()")
     outline = Column(Geometry(geometry_type='POLYGON', srid=4326), nullable=False)
-    height_ahd = Column(Float, nullable=False)
+    min_height_ahd = Column(Float, nullable=False)
+    max_height_ahd = Column(Float, nullable=False)
 
     # Many-to-Many relationship with AddressPoint
     address_points = relationship(
