@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { ref, onMounted, watch } from 'vue';
 import Panel from 'primevue/panel';
+import ScrollPanel from 'primevue/scrollpanel';
 import { useToast } from "primevue/usetoast";
 import FloorHeightsMap from './FloorHeightsMap';
 import {FloorMeasure, AddressPoint, Building} from './types';
@@ -76,17 +77,17 @@ const fetchFloorMeasures = async (building_id: string) => {
 </script>
 
 <template>
+  <Toast />
   <div id="map" class="h-full w-full"></div>
-  <div id="overlay" class="flex flex-col gap-2">
-    <Toast />
-    <div class="p-panel" style="background-color: var(--p-primary-color);">
+  <div id="overlay" class="flex flex-col gap-2 flex-1 ">
+    <div class="flex-none p-panel" style="background-color: var(--p-primary-color);">
       <div class="flex items-center gap-2" style="padding: var(--p-panel-header-padding);">
         <i class="pi pi-home" style="font-size: 2rem; color: white;"></i>
         <span class="text-3xl title">Floor Heights</span>
       </div>
     </div>
 
-    <Panel>
+    <Panel class="flex-none">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
           <!-- <Avatar icon="pi pi-clone" /> -->
@@ -109,7 +110,7 @@ const fetchFloorMeasures = async (building_id: string) => {
       </div>      
     </Panel>
 
-    <Panel v-if="clickedAddressPoint">
+    <Panel class="flex-none" v-if="clickedAddressPoint">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
           <i class="pi pi-map-marker" style="font-size: 1rem"></i>
@@ -129,7 +130,7 @@ const fetchFloorMeasures = async (building_id: string) => {
       
     </Panel>
 
-    <Panel v-if="clickedBuilding">
+    <Panel class="flex-none" v-if="clickedBuilding">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
           <i class="pi pi-building" style="font-size: 1rem"></i>
@@ -144,7 +145,7 @@ const fetchFloorMeasures = async (building_id: string) => {
       </div>
     </Panel>
 
-    <Panel v-if="!(clickedAddressPoint || clickedBuilding)" >
+    <Panel class="flex-none" v-if="!(clickedAddressPoint || clickedBuilding)" >
       <div class="flex flex-col gap-2">
         <div class="flex flex-row w-full items-center justify-center content-center gap-2">
           <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
@@ -155,7 +156,7 @@ const fetchFloorMeasures = async (building_id: string) => {
       </div>
     </Panel>
 
-    <Panel v-if="clickedBuilding && clickedFloorMeasures.length == 0" >
+    <Panel class="flex-none" v-if="clickedBuilding && clickedFloorMeasures.length == 0" >
       <div class="flex flex-col gap-2">
         <div class="flex flex-row w-full items-center justify-center content-center gap-2">
           <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
@@ -166,26 +167,48 @@ const fetchFloorMeasures = async (building_id: string) => {
       </div>
     </Panel>
 
-    <Panel v-if="clickedBuilding && clickedFloorMeasures.length != 0" >
+    <Panel
+      class="flex shrink flex-col min-h-0"
+      v-if="clickedBuilding && clickedFloorMeasures.length != 0"
+      :pt="{
+        contentContainer: (options) => ({
+            id: 'myPanelHeader',
+            class: [
+                'flex-1',
+                'flex',
+                'flex-col',
+                'min-h-0'
+            ]
+        }),
+        content: (options) => ({
+            id: 'myPanelContent',
+            class: [
+                'flex-1',
+                'flex',
+                'flex-col',
+                'min-h-0'
+            ]
+        })
+      }"
+    >
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
           <i class="pi pi-chart-scatter" style="font-size: 1rem"></i>
           <span class="font-bold">Measures</span>
         </div>
       </template>
-      <div class="flex flex-col gap-1">
-        <FloorMeasureComponent
-          v-for="floorMeasure in clickedFloorMeasures"
-          :key="floorMeasure.id"
-          :floor-measure="floorMeasure"
-        />
+
+      <div class="flex flex-1 flex-col min-h-0">
+        <div class="flex h-full max-h-full">
+          <ScrollPanel class="flex h-full max-h-full">
+            <div>
+              <FloorMeasureComponent v-for="fm in clickedFloorMeasures" :floorMeasure="fm"></FloorMeasureComponent>
+            </div>
+          </ScrollPanel>
+        </div>
       </div>
     </Panel>
-
   </div>
-  
-  
-  
 </template>
 
 <style scoped>
