@@ -8,7 +8,8 @@ interface AddressPoint {
 
 interface Building {
   id: string;
-  height_ahd: number;
+  min_height_ahd: number;
+  max_height_ahd: number;
 }
 
 interface FloorMeasure {
