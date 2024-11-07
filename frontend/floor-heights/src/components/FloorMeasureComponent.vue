@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { defineProps } from 'vue';
-import type { PropType } from 'vue'
+import type { PropType } from 'vue';
 import Divider from 'primevue/divider';
 import type { FloorMeasure} from './types';
 
-const props = defineProps({
+defineProps({
   floorMeasure: Object as PropType<FloorMeasure>
 });
 
