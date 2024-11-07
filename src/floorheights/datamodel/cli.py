@@ -1,6 +1,8 @@
 import click
 import geopandas as gpd
+import numpy as np
 import rasterio
+from rasterio.mask import mask
 from shapely.geometry import box
 from sqlalchemy.orm import Session
 from floorheights.datamodel.models import AddressPoint, Building, SessionLocal
@@ -75,6 +77,27 @@ def ingest_address_points(infile, chunksize):
     click.echo("Address ingestion complete")
 
 
+def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.GeoDataFrame) -> tuple:
+    """Sample minimum and maximum elevation values from a DEM for each building geometry"""
+    min_heights = []
+    max_heights = []
+
+    for geom in buildings.geometry:
+        # Mask the raster with the buildings, setting out of bounds pixels to NaN
+        try:
+            out_img, out_transform = mask(dem, [geom], crop=True, all_touched=True, nodata=np.nan)
+            # Calculate min and max heights, ignoring NaN values
+            min_height = np.nanmin(out_img)
+            max_height = np.nanmax(out_img)
+        except ValueError:  # In case building is out of raster bounds or empty
+            min_height = dem.nodata
+            max_height = dem.nodata
+        min_heights.append(min_height)
+        max_heights.append(max_height)
+
+    return min_heights, max_heights
+
+
 @click.command()
 @click.option("-i", "--infile", "infile", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")
 @click.option("-d", "--dem", "dem", required=True, type=click.File(), help="Input DEM file path.")
@@ -91,22 +114,24 @@ def ingest_buildings(infile, dem, chunksize):
     click.echo("Creating mask...")
     bounds = dem.bounds
     mask_geom = box(*bounds)
-
-    mask_df = gpd.GeoDataFrame({"id":1,"geometry":[mask_geom]}, crs=dem_crs.to_string())
+    mask_df = gpd.GeoDataFrame({"id": 1, "geometry": [mask_geom]}, crs=dem_crs.to_string())
     mask_df = mask_df.to_crs(4326)  # Transform mask to WGS84 - might be slightly offset buildings are in GDA94/GDA2020
     mask_bbox = mask_df.total_bounds
 
     click.echo("Loading building GeoParquet...")
     buildings = gpd.read_parquet(infile.name, columns=["geometry"], bbox=mask_bbox)
     buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
-    
+
     click.echo("Sampling DEM with buildings...")
     buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
-    centroids = [(x, y) for x, y in zip(buildings["geometry"].centroid.x, buildings["geometry"].centroid.y)]
-    buildings["height_ahd"] = [x[0] for x in dem.sample(centroids)]
-    buildings["height_ahd"] = buildings["height_ahd"].astype(float).round(3)
+    min_heights, max_heights = sample_dem_with_buildings(dem, buildings)
+    buildings["min_height_ahd"] = min_heights
+    buildings["max_height_ahd"] = max_heights
+    buildings = buildings.round({"min_height_ahd": 3, "max_height_ahd": 3})
 
-    buildings = buildings[buildings["height_ahd"] != dem.nodata]  # Remove any buildings that sample no data
+    # Remove any buildings that sample no data
+    buildings = buildings[buildings["min_height_ahd"] != dem.nodata]
+    buildings = buildings[buildings["max_height_ahd"] != dem.nodata]
     buildings = buildings.to_crs(4326)  # Transform back to WGS84
     buildings = buildings.rename_geometry("outline")
 
