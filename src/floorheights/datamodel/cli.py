@@ -49,15 +49,15 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--infile", "infile", required=True, type=click.Path(), help="Input address points (Geodatabase) file path.")
+@click.option("-i", "--input-address", "input_address", required=True, type=click.Path(), help="Input address points (Geodatabase) file path.")
 @click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
-def ingest_address_points(infile, chunksize):
+def ingest_address_points(input_address, chunksize):
     """Ingest address points"""
     session = SessionLocal()
     engine = session.get_bind()
 
     click.echo("Loading Geodatabase...")
-    address = gpd.read_file(infile, columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS"])
+    address = gpd.read_file(input_address, columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS"])
     address = address.to_crs(4326)
 
     address = address.rename(
@@ -100,16 +100,16 @@ def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.Geo
 
 
 @click.command()
-@click.option("-i", "--infile", "infile", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")
-@click.option("-d", "--dem", "dem", required=True, type=click.File(), help="Input DEM file path.")
+@click.option("-i", "--input-buildings", "input_buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")
+@click.option("-d", "--input-dem", "dem_file", required=True, type=click.File(), help="Input DEM file path.")
 @click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
-def ingest_buildings(infile, dem, chunksize):
+def ingest_buildings(input_buildings, dem_file, chunksize):
     """Ingest building footprints"""
     session = SessionLocal()
     engine = session.get_bind()
 
     click.echo("Loading DEM...")
-    dem = rasterio.open(dem.name)
+    dem = rasterio.open(dem_file.name)
     dem_crs = dem.crs
 
     click.echo("Creating mask...")
@@ -120,7 +120,7 @@ def ingest_buildings(infile, dem, chunksize):
     mask_bbox = mask_df.total_bounds
 
     click.echo("Loading building GeoParquet...")
-    buildings = gpd.read_parquet(infile.name, columns=["geometry"], bbox=mask_bbox)
+    buildings = gpd.read_parquet(input_buildings.name, columns=["geometry"], bbox=mask_bbox)
     buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
 
     click.echo("Sampling DEM with buildings...")
