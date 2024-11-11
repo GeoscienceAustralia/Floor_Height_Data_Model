@@ -27,6 +27,13 @@ floor_measure_dataset_association = Table(
 )
 
 
+cadastre = Table(
+    'cadastre',
+    Base.metadata,
+    Column('id', Integer, primary_key=True),
+    Column('geometry', Geometry(geometry_type='MULTIPOLYGON', srid=4326), nullable=False),
+)
+
 
 class AddressPoint(Base):
     __tablename__ = 'address_point'
