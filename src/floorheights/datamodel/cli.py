@@ -1,15 +1,18 @@
 import click
+import csv
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import rasterio
+from io import StringIO
 from rasterio.mask import mask
 from shapely.geometry import box
-from sqlalchemy import Table, select, and_
+from sqlalchemy import Table, select, and_, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import func, exists
 
-from floorheights.datamodel.models import AddressPoint, Building, address_point_building_association, SessionLocal
+from floorheights.datamodel.models import AddressPoint, Building, FloorMeasure, Method, address_point_building_association, SessionLocal
 
 
 @click.group()
@@ -246,11 +249,115 @@ def join_address_buildings(input_cadastre):
     click.echo("Joining complete")
 
 
+# Alternative to_sql() *method* for DBs that support COPY FROM
+def psql_insert_copy(table, conn, keys, data_iter):
+    """Execute SQL statement inserting data
+
+    Source: https://pandas.pydata.org/docs/user_guide/io.html#io-sql-method
+
+    Parameters
+    ----------
+    table : pandas.io.sql.SQLTable
+    conn : sqlalchemy.engine.Engine or sqlalchemy.engine.Connection
+    keys : list of str
+        Column names
+    data_iter : Iterable that iterates the values to be inserted
+    """
+    # gets a DBAPI connection that can provide a cursor
+    dbapi_conn = conn.connection
+    with dbapi_conn.cursor() as cur:
+        s_buf = StringIO()
+        writer = csv.writer(s_buf)
+        writer.writerows(data_iter)
+        s_buf.seek(0)
+
+        columns = ', '.join(['"{}"'.format(k) for k in keys])
+        if table.schema:
+            table_name = '{}.{}'.format(table.schema, table.name)
+        else:
+            table_name = table.name
+
+        sql = 'COPY {} ({}) FROM STDIN WITH CSV'.format(
+            table_name, columns)
+        cur.copy_expert(sql=sql, file=s_buf)
+
+
+@click.command()
+@click.option("-i", "--input-nexis", "input_nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")
+def ingest_nexis_method(input_nexis):
+    """Ingest NEXIS floor height method"""
+
+    session = SessionLocal()
+    engine = session.get_bind()
+
+    Base = declarative_base()
+
+    nexis_df = pd.read_csv(input_nexis, usecols=["LID", "floor_height_(m)"])
+    nexis_df = nexis_df[nexis_df["LID"].str.startswith("GNAF")]  # Drop rows that aren't a GNAF address
+    nexis_df["LID"] = nexis_df["LID"].str[5:]  # Remove "GNAF_" prefix
+
+    # Select gnaf_ids in the database
+    gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
+    gnaf_ids = [t[0] for t in gnaf_ids]
+
+    # Subset data based on selection
+    nexis_df = nexis_df[nexis_df["LID"].isin(gnaf_ids)]
+    nexis_df.to_sql('temp_nexis', engine, method=psql_insert_copy, if_exists='replace')
+
+    temp_nexis = Table('temp_nexis', Base.metadata, autoload_with=engine)
+
+    # Check for method
+    method_id = session.execute(select(Method.id).filter(Method.name == "Estimated")).one()
+
+    if not method_id:
+        method = Method(
+            name="Estimated",
+        )
+        session.add(method)
+        session.commit()
+
+    select_query = (
+        select(
+            func.gen_random_uuid().label("id"),
+            literal(0).label("storey"),
+            temp_nexis.c["floor_height_(m)"].label("height"),
+            literal(0.5).label("accuracy_measure"),
+            Building.id.label("building_id"),
+            literal(method_id[0]).label("method_id")
+        )
+        .join(
+            address_point_building_association,
+            address_point_building_association.c.building_id == Building.id,
+        )
+        .join(
+            AddressPoint,
+            address_point_building_association.c.address_point_id == AddressPoint.id,
+        )
+        .join(
+            temp_nexis,
+            temp_nexis.c.LID == AddressPoint.gnaf_id,
+        )
+    )
+
+    insert_query = (
+        insert(FloorMeasure)
+        .from_select(
+            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id"],
+            select_query,
+        )
+        .on_conflict_do_nothing()
+    )
+
+    session.execute(insert_query)
+    session.commit()   
+
+
 cli.add_command(create_dummy_address_point)
 cli.add_command(create_dummy_building)
 cli.add_command(ingest_address_points)
 cli.add_command(ingest_buildings)
 cli.add_command(join_address_buildings)
+cli.add_command(ingest_nexis_method)
 
 
 if __name__ == '__main__':
