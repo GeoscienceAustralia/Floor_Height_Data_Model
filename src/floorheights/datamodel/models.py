@@ -27,14 +27,6 @@ floor_measure_dataset_association = Table(
 )
 
 
-cadastre = Table(
-    'cadastre',
-    Base.metadata,
-    Column('id', Integer, primary_key=True),
-    Column('geometry', Geometry(geometry_type='MULTIPOLYGON', srid=4326), nullable=False),
-)
-
-
 class AddressPoint(Base):
     __tablename__ = 'address_point'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default="gen_random_uuid()")

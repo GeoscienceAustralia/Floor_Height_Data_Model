@@ -4,12 +4,12 @@ import numpy as np
 import rasterio
 from rasterio.mask import mask
 from shapely.geometry import box
-from sqlalchemy import select, and_
+from sqlalchemy import Table, select, and_
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import func, exists
 
-from floorheights.datamodel.models import AddressPoint, Building, address_point_building_association, cadastre, SessionLocal
+from floorheights.datamodel.models import AddressPoint, Building, address_point_building_association, SessionLocal
 
 
 @click.group()
@@ -159,6 +159,7 @@ def join_address_buildings(input_cadastre):
     """Join address points to building outlines"""
     session = SessionLocal()
     engine = session.get_bind()
+    Base = declarative_base()
 
     click.echo("Performing join by contains...")
     # Selects address-building matches by buldings containing address points
@@ -166,7 +167,8 @@ def join_address_buildings(input_cadastre):
         AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
     ).join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
 
-    # TODO: May want to consider using a materialised view instead
+    # TODO: May want to consider using a materialised view instead of these queries
+
     insert_query = (
         insert(address_point_building_association)
         .from_select(["address_point_id", "building_id"], select_query)
@@ -175,17 +177,18 @@ def join_address_buildings(input_cadastre):
     session.execute(insert_query)
 
     if input_cadastre:
-        click.echo("Loading Cadastre...")
+        click.echo("Loading cadastre...")
         try:
             cadastre_df = gpd.read_file(input_cadastre, columns=["geometry"])
             cadastre_df = cadastre_df.to_crs(4326)
         except Exception as error:
             click.echo(f"An error occurred while loading the file: {error}")
+            session.rollback()
             return
 
-        click.echo("Copying Cadastre to PostgreSQL...")
+        click.echo("Copying cadastre to PostgreSQL...")
         cadastre_df.to_postgis(
-            "cadastre",
+            "temp_cadastre",
             engine,
             schema="public",
             if_exists="replace",
@@ -193,7 +196,10 @@ def join_address_buildings(input_cadastre):
             index_label="id",
         )
 
-        # TODO: Might need an extra processing step to deal with overlapping parcel geometries
+        # Get temp_cadastre table model from database
+        temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=engine)
+
+        # TODO: May need an extra processing step to deal with overlapping parcel geometries
 
         click.echo("Performing join with cadastre...")
         # Selects address-building matches by joining to common cadastre lots, where buildings overlap the lot by 50% of its area
@@ -204,17 +210,17 @@ def join_address_buildings(input_cadastre):
             )
             .select_from(
                 AddressPoint.__table__.join(
-                    cadastre,
-                    func.ST_Within(AddressPoint.location, cadastre.c.geometry),
+                    temp_cadastre,
+                    func.ST_Within(AddressPoint.location, temp_cadastre.c.geometry),
                 ).join(
                     Building,
-                    func.ST_Intersects(Building.outline, cadastre.c.geometry),
+                    func.ST_Intersects(Building.outline, temp_cadastre.c.geometry),
                 )
             )
             .where(
                 and_(
                     func.ST_Area(
-                        func.ST_Intersection(Building.outline, cadastre.c.geometry)
+                        func.ST_Intersection(Building.outline, temp_cadastre.c.geometry)
                     )
                     / func.ST_Area(Building.outline)
                     > 0.5,
@@ -232,6 +238,9 @@ def join_address_buildings(input_cadastre):
             .on_conflict_do_nothing()
         )
         session.execute(insert_query)
+        session.commit()
+
+        temp_cadastre.drop(engine)
 
     session.commit()
     click.echo("Joining complete")
