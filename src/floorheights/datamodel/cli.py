@@ -4,10 +4,10 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
+from collections.abc import Iterable
 from io import StringIO
 from rasterio.mask import mask
 from shapely.geometry import box
-from typing import List, Iterable
 from sqlalchemy import Table, Numeric, select, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
@@ -256,7 +256,7 @@ def join_address_buildings(input_cadastre):
 def psql_insert_copy(
     table: pd.io.sql.SQLTable,
     conn: Engine | Connection,
-    keys: List[str],
+    keys: list[str],
     data_iter: Iterable,
 ) -> None:
     """Execute SQL statement inserting data
@@ -290,7 +290,7 @@ def psql_insert_copy(
         cur.copy_expert(sql=sql, file=s_buf)
 
 
-def get_or_create_method_id(session: Session, method_name: str) -> str:
+def get_or_create_method_id(session: Session, method_name: str) -> UUID:
     """Retrieve the ID for a given method, creating it if it doesn't exist"""
     method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
     if not method_id:
