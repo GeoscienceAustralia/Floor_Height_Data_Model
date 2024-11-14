@@ -398,6 +398,9 @@ def ingest_nexis_method(input_nexis):
     
     session.commit()
 
+    temp_nexis.drop(engine)
+    session.commit()
+
     click.echo("NEXIS ingestion complete")
 
 
