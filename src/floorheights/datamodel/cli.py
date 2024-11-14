@@ -7,10 +7,14 @@ import rasterio
 from io import StringIO
 from rasterio.mask import mask
 from shapely.geometry import box
+from typing import List, Iterable
 from sqlalchemy import Table, Numeric, select, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, declarative_base
-from sqlalchemy.sql import func, exists
+from sqlalchemy.sql import Select, func, exists
+from sqlalchemy.sql.expression import TableClause
+from uuid import UUID
 
 from floorheights.datamodel.models import AddressPoint, Building, FloorMeasure, Method, address_point_building_association, SessionLocal
 
@@ -249,7 +253,12 @@ def join_address_buildings(input_cadastre):
     click.echo("Joining complete")
 
 
-def psql_insert_copy(table, conn, keys, data_iter):
+def psql_insert_copy(
+    table: pd.io.sql.SQLTable,
+    conn: Engine | Connection,
+    keys: List[str],
+    data_iter: Iterable,
+) -> None:
     """Execute SQL statement inserting data
 
     Source: https://pandas.pydata.org/docs/user_guide/io.html#io-sql-method
@@ -281,6 +290,67 @@ def psql_insert_copy(table, conn, keys, data_iter):
         cur.copy_expert(sql=sql, file=s_buf)
 
 
+def get_or_create_method_id(session: Session, method_name: str) -> str:
+    """Retrieve the ID for a given method, creating it if it doesn't exist"""
+    method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
+    if not method_id:
+        method = Method(name=method_name)
+        session.add(method)
+        session.flush()
+        return method.id
+    return method_id[0]
+
+
+def build_floor_measure_query(
+    temp_nexis: TableClause,
+    method_id: UUID,
+    accuracy_measure: float,
+    storey: int,
+    step_counting: bool = False,
+) -> Select:
+    """Build a SQL select query to insert into FloorMeasure with conditional filters"""
+    query = (
+        select(
+            func.gen_random_uuid().label("id"),
+            literal(storey).label("storey"),
+            temp_nexis.c.floor_height_m.label("height"),
+            literal(accuracy_measure).label("accuracy_measure"),
+            Building.id.label("building_id"),
+            literal(method_id).label("method_id"),
+        )
+        .join(
+            address_point_building_association,
+            address_point_building_association.c.building_id == Building.id,
+        )
+        .join(
+            AddressPoint,
+            address_point_building_association.c.address_point_id == AddressPoint.id,
+        )
+        .join(
+            temp_nexis,
+            temp_nexis.c.id == AddressPoint.gnaf_id,
+        )
+        .filter(not_(Building.id.in_(select(FloorMeasure.building_id))))
+    )
+
+    if step_counting:
+        query = query.filter(func.mod(temp_nexis.c.floor_height_m, 0.28) == 0)
+
+    return query
+
+
+def insert_floor_measure(session: Session, select_query: Select) -> None:
+    """Insert records into the FloorMeasure table from a select query"""
+    session.execute(
+        insert(FloorMeasure)
+        .from_select(
+            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id"],
+            select_query,
+        )
+        .on_conflict_do_nothing()
+    )
+
+
 @click.command()
 @click.option("-i", "--input-nexis", "input_nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")
 def ingest_nexis_method(input_nexis):
@@ -304,119 +374,30 @@ def ingest_nexis_method(input_nexis):
     nexis_df = nexis_df[nexis_df["id"].isin(gnaf_ids)]
 
     click.echo("Copying NEXIS points to PostgreSQL...")
-    nexis_df.to_sql('temp_nexis', engine, method=psql_insert_copy, if_exists='replace', dtype={'floor_height_m': Numeric}
-)
-    temp_nexis = Table('temp_nexis', Base.metadata, autoload_with=engine)
-
-    # Check for "Surveyed" method
-    survey_id = session.execute(select(Method.id).filter(Method.name == "Surveyed")).first()
-    if not survey_id:
-        method = Method(
-            name="Surveyed",
-        )
-        session.add(method)
-        session.flush()
-        survey_id= method.id
-        print(survey_id)
-    else:
-        survey_id = survey_id[0]
-        print(survey_id)
-
-    # Check for "Step counting" method
-    step_count_id = session.execute(select(Method.id).filter(Method.name == "Step counting")).first()
-    if not step_count_id:
-        method = Method(
-            name="Step counting",
-        )
-        session.add(method)
-        session.flush()
-        step_count_id= method.id
-        print(step_count_id)
-    else:
-        step_count_id = step_count_id[0]
-        print(step_count_id)
-
-    click.echo("Inserting into floor_measure table...")
-    # Insert for step counting
-    select_query = (
-        select(
-            func.gen_random_uuid().label("id"),
-            literal(0).label("storey"),
-            temp_nexis.c.floor_height_m.label("height"),
-            literal(50).label("accuracy_measure"),  # TODO: Remove placeholder accuracy
-            Building.id.label("building_id"),
-            literal(step_count_id).label("method_id"),
-        )
-        .join(
-            address_point_building_association,
-            address_point_building_association.c.building_id == Building.id,
-        )
-        .join(
-            AddressPoint,
-            address_point_building_association.c.address_point_id == AddressPoint.id,
-        )
-        .join(
-            temp_nexis,
-            temp_nexis.c.id == AddressPoint.gnaf_id,
-        )
-        .filter(
-            and_(func.mod(temp_nexis.c.floor_height_m, 0.28) == 0),  # Step counting when floor heights are multiples of 0.28
-            not_(
-                Building.id.in_(select(FloorMeasure.building_id))
-            ),
-        )
+    nexis_df.to_sql(
+        "temp_nexis",
+        engine,
+        method=psql_insert_copy,
+        if_exists="replace",
+        dtype={
+            "floor_height_m": Numeric  # Set numeric so we don't need to type cast in the db
+        },
     )
+    temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=engine)
 
-    print(session.execute(select_query).all())
-    insert_query = (
-        insert(FloorMeasure)
-        .from_select(
-            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id"],
-            select_query,
-        )
-        .on_conflict_do_nothing()
-    )
-    session.execute(insert_query)
+    step_count_id = get_or_create_method_id(session, "Step counting")
+    survey_id = get_or_create_method_id(session, "Surveyed")
 
-    # Insert for surveyed
-    select_query = (
-        select(
-            func.gen_random_uuid().label("id"),
-            literal(0).label("storey"),
-            temp_nexis.c.floor_height_m.label("height"),
-            literal(90).label("accuracy_measure"),  # TODO: Remove placeholder accuracy
-            Building.id.label("building_id"),
-            literal(survey_id).label("method_id"),
-        )
-        .join(
-            address_point_building_association,
-            address_point_building_association.c.building_id == Building.id,
-        )
-        .join(
-            AddressPoint,
-            address_point_building_association.c.address_point_id == AddressPoint.id,
-        )
-        .join(
-            temp_nexis,
-            temp_nexis.c.id == AddressPoint.gnaf_id,
-        )
-        .filter(
-            not_(Building.id.in_(select(FloorMeasure.building_id))),
-        )
-    )
+    # TODO: Determine measure accuracies
+    step_count_query = build_floor_measure_query(temp_nexis, step_count_id, 50, 0, step_counting=True)
+    survey_query = build_floor_measure_query(temp_nexis, survey_id, 90, 0, step_counting=False)
 
-    print(session.execute(select_query).all())
-    insert_query = (
-        insert(FloorMeasure)
-        .from_select(
-            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id"],
-            select_query,
-        )
-        .on_conflict_do_nothing()
-    )
-    session.execute(insert_query)
-
+    click.echo("Inserting into floor_measure table...") 
+    insert_floor_measure(session, step_count_query)
+    insert_floor_measure(session, survey_query)
+    
     session.commit()
+
     click.echo("NEXIS ingestion complete")
 
 
