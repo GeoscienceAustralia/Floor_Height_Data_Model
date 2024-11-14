@@ -7,7 +7,7 @@ import rasterio
 from io import StringIO
 from rasterio.mask import mask
 from shapely.geometry import box
-from sqlalchemy import Table, select, and_, literal
+from sqlalchemy import Table, Numeric, select, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import func, exists
@@ -249,7 +249,6 @@ def join_address_buildings(input_cadastre):
     click.echo("Joining complete")
 
 
-# Alternative to_sql() *method* for DBs that support COPY FROM
 def psql_insert_copy(table, conn, keys, data_iter):
     """Execute SQL statement inserting data
 
@@ -289,41 +288,64 @@ def ingest_nexis_method(input_nexis):
 
     session = SessionLocal()
     engine = session.get_bind()
-
     Base = declarative_base()
 
+    click.echo("Loading NEXIS points...")
     nexis_df = pd.read_csv(input_nexis, usecols=["LID", "floor_height_(m)"])
-    nexis_df = nexis_df[nexis_df["LID"].str.startswith("GNAF")]  # Drop rows that aren't a GNAF address
-    nexis_df["LID"] = nexis_df["LID"].str[5:]  # Remove "GNAF_" prefix
+    nexis_df = nexis_df.rename(columns={"LID": "id", "floor_height_(m)": "floor_height_m"})
+    nexis_df = nexis_df[nexis_df["id"].str.startswith("GNAF")]  # Drop rows that aren't a GNAF address
+    nexis_df["id"] = nexis_df["id"].str[5:]  # Remove "GNAF_" prefix
 
     # Select gnaf_ids in the database
     gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
     gnaf_ids = [t[0] for t in gnaf_ids]
 
     # Subset data based on selection
-    nexis_df = nexis_df[nexis_df["LID"].isin(gnaf_ids)]
-    nexis_df.to_sql('temp_nexis', engine, method=psql_insert_copy, if_exists='replace')
+    nexis_df = nexis_df[nexis_df["id"].isin(gnaf_ids)]
 
+    click.echo("Copying NEXIS points to PostgreSQL...")
+    nexis_df.to_sql('temp_nexis', engine, method=psql_insert_copy, if_exists='replace', dtype={'floor_height_m': Numeric}
+)
     temp_nexis = Table('temp_nexis', Base.metadata, autoload_with=engine)
 
-    # Check for method
-    method_id = session.execute(select(Method.id).filter(Method.name == "Estimated")).one()
-
-    if not method_id:
+    # Check for "Surveyed" method
+    survey_id = session.execute(select(Method.id).filter(Method.name == "Surveyed")).first()
+    if not survey_id:
         method = Method(
-            name="Estimated",
+            name="Surveyed",
         )
         session.add(method)
-        session.commit()
+        session.flush()
+        survey_id= method.id
+        print(survey_id)
+    else:
+        survey_id = survey_id[0]
+        print(survey_id)
 
+    # Check for "Step counting" method
+    step_count_id = session.execute(select(Method.id).filter(Method.name == "Step counting")).first()
+    if not step_count_id:
+        method = Method(
+            name="Step counting",
+        )
+        session.add(method)
+        session.flush()
+        step_count_id= method.id
+        print(step_count_id)
+    else:
+        step_count_id = step_count_id[0]
+        print(step_count_id)
+
+    click.echo("Inserting into floor_measure table...")
+    # Insert for step counting
     select_query = (
         select(
             func.gen_random_uuid().label("id"),
             literal(0).label("storey"),
-            temp_nexis.c["floor_height_(m)"].label("height"),
-            literal(0.5).label("accuracy_measure"),
+            temp_nexis.c.floor_height_m.label("height"),
+            literal(50).label("accuracy_measure"),  # TODO: Remove placeholder accuracy
             Building.id.label("building_id"),
-            literal(method_id[0]).label("method_id")
+            literal(step_count_id).label("method_id"),
         )
         .join(
             address_point_building_association,
@@ -335,10 +357,17 @@ def ingest_nexis_method(input_nexis):
         )
         .join(
             temp_nexis,
-            temp_nexis.c.LID == AddressPoint.gnaf_id,
+            temp_nexis.c.id == AddressPoint.gnaf_id,
+        )
+        .filter(
+            and_(func.mod(temp_nexis.c.floor_height_m, 0.28) == 0),  # Step counting when floor heights are multiples of 0.28
+            not_(
+                Building.id.in_(select(FloorMeasure.building_id))
+            ),
         )
     )
 
+    print(session.execute(select_query).all())
     insert_query = (
         insert(FloorMeasure)
         .from_select(
@@ -347,9 +376,48 @@ def ingest_nexis_method(input_nexis):
         )
         .on_conflict_do_nothing()
     )
-
     session.execute(insert_query)
-    session.commit()   
+
+    # Insert for surveyed
+    select_query = (
+        select(
+            func.gen_random_uuid().label("id"),
+            literal(0).label("storey"),
+            temp_nexis.c.floor_height_m.label("height"),
+            literal(90).label("accuracy_measure"),  # TODO: Remove placeholder accuracy
+            Building.id.label("building_id"),
+            literal(survey_id).label("method_id"),
+        )
+        .join(
+            address_point_building_association,
+            address_point_building_association.c.building_id == Building.id,
+        )
+        .join(
+            AddressPoint,
+            address_point_building_association.c.address_point_id == AddressPoint.id,
+        )
+        .join(
+            temp_nexis,
+            temp_nexis.c.id == AddressPoint.gnaf_id,
+        )
+        .filter(
+            not_(Building.id.in_(select(FloorMeasure.building_id))),
+        )
+    )
+
+    print(session.execute(select_query).all())
+    insert_query = (
+        insert(FloorMeasure)
+        .from_select(
+            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id"],
+            select_query,
+        )
+        .on_conflict_do_nothing()
+    )
+    session.execute(insert_query)
+
+    session.commit()
+    click.echo("NEXIS ingestion complete")
 
 
 cli.add_command(create_dummy_address_point)
