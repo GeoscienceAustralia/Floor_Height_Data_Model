@@ -27,7 +27,6 @@ floor_measure_dataset_association = Table(
 )
 
 
-
 class AddressPoint(Base):
     __tablename__ = 'address_point'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default="gen_random_uuid()")
