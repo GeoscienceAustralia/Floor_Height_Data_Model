@@ -16,7 +16,7 @@ from sqlalchemy.sql import Select, func, exists
 from sqlalchemy.sql.expression import TableClause
 from uuid import UUID
 
-from floorheights.datamodel.models import AddressPoint, Building, FloorMeasure, Method, address_point_building_association, SessionLocal
+from floorheights.datamodel.models import AddressPoint, Building, FloorMeasure, Method, Dataset, address_point_building_association, floor_measure_dataset_association, SessionLocal
 
 
 @click.group()
@@ -140,6 +140,8 @@ def ingest_buildings(input_buildings, dem_file, chunksize):
     buildings["min_height_ahd"] = min_heights
     buildings["max_height_ahd"] = max_heights
     buildings = buildings.round({"min_height_ahd": 3, "max_height_ahd": 3})
+
+    # TODO: Handle building footprints overlapping the edge of the DEM
 
     # Remove any buildings that sample no data
     buildings = buildings[buildings["min_height_ahd"] != dem.nodata]
@@ -301,6 +303,25 @@ def get_or_create_method_id(session: Session, method_name: str) -> UUID:
     return method_id[0]
 
 
+def get_or_create_dataset_id(
+    session: Session, dataset_name: str, dataset_desc: str, dataset_src: str
+) -> UUID:
+    """Retrieve the ID for a given dataset, creating it if it doesn't exist"""
+    dataset_id = session.execute(
+        select(Dataset.id).filter(Dataset.name == dataset_name)
+    ).first()
+    if not dataset_id:
+        dataset = Dataset(
+            name=dataset_name,
+            description=dataset_desc,
+            source=dataset_src
+        )
+        session.add(dataset)
+        session.flush()
+        return dataset.id
+    return dataset_id[0]
+
+
 def build_floor_measure_query(
     temp_nexis: TableClause,
     method_id: UUID,
@@ -339,16 +360,18 @@ def build_floor_measure_query(
     return query
 
 
-def insert_floor_measure(session: Session, select_query: Select) -> None:
+def insert_floor_measure(session: Session, select_query: Select) -> list:
     """Insert records into the FloorMeasure table from a select query"""
-    session.execute(
+    ids = session.execute(
         insert(FloorMeasure)
         .from_select(
             ["id", "storey", "height", "accuracy_measure", "building_id", "method_id"],
             select_query,
         )
         .on_conflict_do_nothing()
+        .returning(FloorMeasure.id)
     )
+    return ids.fetchall()
 
 
 @click.command()
@@ -368,7 +391,7 @@ def ingest_nexis_method(input_nexis):
 
     # Select gnaf_ids in the database
     gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
-    gnaf_ids = [t[0] for t in gnaf_ids]
+    gnaf_ids = [row[0] for row in gnaf_ids]
 
     # Subset data based on selection
     nexis_df = nexis_df[nexis_df["id"].isin(gnaf_ids)]
@@ -389,13 +412,36 @@ def ingest_nexis_method(input_nexis):
     survey_id = get_or_create_method_id(session, "Surveyed")
 
     # TODO: Determine measure accuracies
-    step_count_query = build_floor_measure_query(temp_nexis, step_count_id, 50, 0, step_counting=True)
-    survey_query = build_floor_measure_query(temp_nexis, survey_id, 90, 0, step_counting=False)
+    step_count_query = build_floor_measure_query(
+        temp_nexis, step_count_id, 50, 0, step_counting=True
+    )
+    survey_query = build_floor_measure_query(
+        temp_nexis, survey_id, 90, 0, step_counting=False
+    )
 
-    click.echo("Inserting into floor_measure table...") 
-    insert_floor_measure(session, step_count_query)
-    insert_floor_measure(session, survey_query)
-    
+    click.echo("Inserting into floor_measure table...")
+    step_count_ids = insert_floor_measure(session, step_count_query)
+    survey_ids = insert_floor_measure(session, survey_query)
+
+    click.echo("Inserting into dataset table...")
+    floor_measure_inserted_ids = step_count_ids + survey_ids
+
+    if floor_measure_inserted_ids:
+        nexis_dataset_id = get_or_create_dataset_id(
+            session, "NEXIS", "NEXIS building points", "Geoscience Australia"
+        )
+
+        nexis_insert = [
+            {"floor_measure_id": row[0], "dataset_id": nexis_dataset_id}
+            for row in floor_measure_inserted_ids
+        ]
+
+        session.execute(
+            insert(floor_measure_dataset_association)
+            .values(nexis_insert)
+            .on_conflict_do_nothing()
+        )
+
     session.commit()
 
     temp_nexis.drop(engine)
