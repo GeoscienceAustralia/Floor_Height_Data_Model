@@ -382,7 +382,24 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
         .on_conflict_do_nothing()
         .returning(FloorMeasure.id)
     )
-    return ids.fetchall()
+    return ids.all()
+
+
+def insert_floor_measure_dataset_association(
+    session: Session, nexis_dataset_id: UUID, floor_measure_inserted_ids: list
+) -> None:
+    """Insert records into the floor_measure_dataset_association table from a
+    NEXIS Dataset record id and a list of FloorMeasure ids"""
+    # Parse list of ids into a dict for inserting into the association table
+    floor_measure_dataset_values = [
+        {"floor_measure_id": row.id, "dataset_id": nexis_dataset_id}
+        for row in floor_measure_inserted_ids
+    ]
+    session.execute(
+        insert(floor_measure_dataset_association)
+        .values(floor_measure_dataset_values)
+        .on_conflict_do_nothing()
+    )
 
 
 @click.command()
@@ -471,15 +488,8 @@ def ingest_nexis_method(input_nexis):
         nexis_dataset_id = get_or_create_dataset_id(
             session, "NEXIS", "NEXIS building points", "Geoscience Australia"
         )
-        # Parse list of ids into a dict for inserting into the association table
-        floor_measure_dataset_values = [
-            {"floor_measure_id": row[0], "dataset_id": nexis_dataset_id}
-            for row in floor_measure_inserted_ids
-        ]
-        session.execute(
-            insert(floor_measure_dataset_association)
-            .values(floor_measure_dataset_values)
-            .on_conflict_do_nothing()
+        insert_floor_measure_dataset_association(
+            session, nexis_dataset_id, floor_measure_inserted_ids
         )
 
     session.commit()
