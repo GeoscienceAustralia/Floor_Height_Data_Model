@@ -296,7 +296,7 @@ def get_or_create_method_id(session: Session, method_name: str) -> UUID:
     """Retrieve the ID for a given method, creating it if it doesn't exist"""
     method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
     if not method_id:
-        click.echo("Inserting into method table...")
+        click.echo(f"Inserting '{method_name}' into method table...")
         method = Method(name=method_name)
         session.add(method)
         session.flush()
@@ -312,7 +312,7 @@ def get_or_create_dataset_id(
         select(Dataset.id).filter(Dataset.name == dataset_name)
     ).first()
     if not dataset_id:
-        click.echo("Inserting into dataset table...")
+        click.echo(f"Inserting '{dataset_name}' into dataset table...")
         dataset = Dataset(
             name=dataset_name,
             description=dataset_desc,
@@ -426,7 +426,7 @@ def ingest_nexis_method(input_nexis):
         temp_nexis, survey_id, 90, 0, step_counting=False
     )
 
-    click.echo("Inserting into floor_measure table...")
+    click.echo("Inserting records into floor_measure table...")
     # Insert into the floor_measure table and the ids of records inserted
     step_count_ids = insert_floor_measure(session, step_count_query)
     survey_ids = insert_floor_measure(session, survey_query)
