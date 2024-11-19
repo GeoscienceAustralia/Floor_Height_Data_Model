@@ -340,6 +340,13 @@ def build_floor_measure_query(
             literal(accuracy_measure).label("accuracy_measure"),
             Building.id.label("building_id"),
             literal(method_id).label("method_id"),
+            func.json_build_object(
+                'nexis_construction_type', temp_nexis.c.nexis_construction_type,
+                'nexis_year_built', temp_nexis.c.nexis_year_built,
+                'nexis_wall_type', temp_nexis.c.nexis_wall_type,
+                'generic_ext_wall', temp_nexis.c.generic_ext_wall,
+                'local_year_built', temp_nexis.c.local_year_built
+            ).label("aux_info"),
         )
         .join(
             address_point_building_association,
@@ -351,7 +358,7 @@ def build_floor_measure_query(
         )
         .join(
             temp_nexis,
-            temp_nexis.c.id == AddressPoint.gnaf_id,
+            temp_nexis.c.lid == AddressPoint.gnaf_id,
         )
         .filter(not_(Building.id.in_(select(FloorMeasure.building_id))))
     )
@@ -369,7 +376,7 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
     ids = session.execute(
         insert(FloorMeasure)
         .from_select(
-            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id"],
+            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id", "aux_info"],
             select_query,
         )
         .on_conflict_do_nothing()
@@ -388,17 +395,43 @@ def ingest_nexis_method(input_nexis):
     Base = declarative_base()
 
     click.echo("Loading NEXIS points...")
-    nexis_df = pd.read_csv(input_nexis, usecols=["LID", "floor_height_(m)"])
-    nexis_df = nexis_df.rename(columns={"LID": "id", "floor_height_(m)": "floor_height_m"})
-    nexis_df = nexis_df[nexis_df["id"].str.startswith("GNAF")]  # Drop rows that aren't a GNAF address
-    nexis_df["id"] = nexis_df["id"].str[5:]  # Remove "GNAF_" prefix
+    nexis_df = pd.read_csv(
+        input_nexis,
+        usecols=[
+            "LID",
+            "floor_height_(m)",
+            "flood_vulnerability_function_id",
+            "NEXIS_CONSTRUCTION_TYPE",
+            "NEXIS_YEAR_BUILT",
+            "NEXIS_WALL_TYPE",
+            "GENERIC_EXT_WALL",
+            "LOCAL_YEAR_BUILT",
+        ],
+        dtype={
+            "LID": str,
+            "floor_height_(m)": float,
+            "NEXIS_CONSTRUCTION_TYPE": str,
+            "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
+            "NEXIS_WALL_TYPE": str,
+            "GENERIC_EXT_WALL": str,
+            "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
+        },
+    )
+    # Make column names lower case and remove parenthesis
+    nexis_df.columns = nexis_df.columns.str.lower().str.replace(
+        r"\(|\)", "", regex=True
+    )
+    nexis_df = nexis_df[
+        nexis_df["lid"].str.startswith("GNAF")
+    ]  # Drop rows that aren't a GNAF address
+    nexis_df["lid"] = nexis_df["lid"].str[5:]  # Remove "GNAF_" prefix
 
     # Select gnaf_ids in the database
     gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
     gnaf_ids = [row[0] for row in gnaf_ids]
 
     # Subset NEXIS data based on selection
-    nexis_df = nexis_df[nexis_df["id"].isin(gnaf_ids)]
+    nexis_df = nexis_df[nexis_df["lid"].isin(gnaf_ids)]
 
     click.echo("Copying NEXIS points to PostgreSQL...")
     nexis_df.to_sql(
