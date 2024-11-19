@@ -296,6 +296,7 @@ def get_or_create_method_id(session: Session, method_name: str) -> UUID:
     """Retrieve the ID for a given method, creating it if it doesn't exist"""
     method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
     if not method_id:
+        click.echo("Inserting into method table...")
         method = Method(name=method_name)
         session.add(method)
         session.flush()
@@ -311,6 +312,7 @@ def get_or_create_dataset_id(
         select(Dataset.id).filter(Dataset.name == dataset_name)
     ).first()
     if not dataset_id:
+        click.echo("Inserting into dataset table...")
         dataset = Dataset(
             name=dataset_name,
             description=dataset_desc,
@@ -361,7 +363,9 @@ def build_floor_measure_query(
 
 
 def insert_floor_measure(session: Session, select_query: Select) -> list:
-    """Insert records into the FloorMeasure table from a select query"""
+    """Insert records into the FloorMeasure table from a select query,
+    returning a list of the floor_measure ids that were inserted
+    """
     ids = session.execute(
         insert(FloorMeasure)
         .from_select(
@@ -393,7 +397,7 @@ def ingest_nexis_method(input_nexis):
     gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
     gnaf_ids = [row[0] for row in gnaf_ids]
 
-    # Subset data based on selection
+    # Subset NEXIS data based on selection
     nexis_df = nexis_df[nexis_df["id"].isin(gnaf_ids)]
 
     click.echo("Copying NEXIS points to PostgreSQL...")
@@ -408,10 +412,13 @@ def ingest_nexis_method(input_nexis):
     )
     temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=engine)
 
+    # Get step_count and survey method ids
     step_count_id = get_or_create_method_id(session, "Step counting")
     survey_id = get_or_create_method_id(session, "Surveyed")
 
     # TODO: Determine measure accuracies
+
+    # Build select query that will be inserted into the floor_measure table
     step_count_query = build_floor_measure_query(
         temp_nexis, step_count_id, 50, 0, step_counting=True
     )
@@ -420,25 +427,25 @@ def ingest_nexis_method(input_nexis):
     )
 
     click.echo("Inserting into floor_measure table...")
+    # Insert into the floor_measure table and the ids of records inserted
     step_count_ids = insert_floor_measure(session, step_count_query)
     survey_ids = insert_floor_measure(session, survey_query)
 
-    click.echo("Inserting into dataset table...")
     floor_measure_inserted_ids = step_count_ids + survey_ids
 
     if floor_measure_inserted_ids:
+        # If there are new floor_measure ids, get a dataset record for NEXIS
         nexis_dataset_id = get_or_create_dataset_id(
             session, "NEXIS", "NEXIS building points", "Geoscience Australia"
         )
-
-        nexis_insert = [
+        # Parse list of ids into a dict for inserting into the association table
+        floor_measure_dataset_values = [
             {"floor_measure_id": row[0], "dataset_id": nexis_dataset_id}
             for row in floor_measure_inserted_ids
         ]
-
         session.execute(
             insert(floor_measure_dataset_association)
-            .values(nexis_insert)
+            .values(floor_measure_dataset_values)
             .on_conflict_do_nothing()
         )
 
