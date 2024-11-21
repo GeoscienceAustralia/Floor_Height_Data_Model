@@ -350,6 +350,7 @@ def build_floor_measure_query(
             Building.id.label("building_id"),
             literal(method_id).label("method_id"),
             func.json_build_object(
+                'flood_vulnerability_function_id', temp_nexis.c.flood_vulnerability_function_id,
                 'nexis_construction_type', temp_nexis.c.nexis_construction_type,
                 'nexis_year_built', temp_nexis.c.nexis_year_built,
                 'nexis_wall_type', temp_nexis.c.nexis_wall_type,
@@ -431,6 +432,7 @@ def ingest_nexis_method(input_nexis):
         dtype={
             "LID": str,
             "floor_height_(m)": float,
+            "flood_vulnerability_function_id": str,
             "NEXIS_CONSTRUCTION_TYPE": str,
             "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
             "NEXIS_WALL_TYPE": str,
