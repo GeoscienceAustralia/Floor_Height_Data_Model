@@ -357,19 +357,13 @@ def build_floor_measure_query(
                 'local_year_built', temp_nexis.c.local_year_built
             ).label("aux_info"),
         )
-        .join(
-            address_point_building_association,
-            address_point_building_association.c.building_id == Building.id,
-        )
-        .join(
-            AddressPoint,
-            address_point_building_association.c.address_point_id == AddressPoint.id,
-        )
+        .select_from(Building)
+        .join(AddressPoint, Building.address_points)
         .join(
             temp_nexis,
             temp_nexis.c.lid == AddressPoint.gnaf_id,
         )
-        .filter(not_(Building.id.in_(select(FloorMeasure.building_id))))
+        .filter(not_(Building.id.in_(select(FloorMeasure.building_id).distinct())))
     )
 
     if step_counting:
