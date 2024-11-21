@@ -16,7 +16,16 @@ from sqlalchemy.sql import Select, func, exists
 from sqlalchemy.sql.expression import TableClause
 from uuid import UUID
 
-from floorheights.datamodel.models import AddressPoint, Building, FloorMeasure, Method, Dataset, address_point_building_association, floor_measure_dataset_association, SessionLocal
+from floorheights.datamodel.models import (
+    AddressPoint,
+    Building,
+    FloorMeasure,
+    Method,
+    Dataset,
+    address_point_building_association,
+    floor_measure_dataset_association,
+    SessionLocal,
+)
 
 
 @click.group()
