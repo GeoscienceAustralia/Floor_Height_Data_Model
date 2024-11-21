@@ -1,15 +1,31 @@
 import click
+import csv
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import rasterio
+from collections.abc import Iterable
+from io import StringIO
 from rasterio.mask import mask
 from shapely.geometry import box
-from sqlalchemy import Table, select, and_
+from sqlalchemy import Table, Numeric, select, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, declarative_base
-from sqlalchemy.sql import func, exists
+from sqlalchemy.sql import Select, func, exists
+from sqlalchemy.sql.expression import TableClause
+from uuid import UUID
 
-from floorheights.datamodel.models import AddressPoint, Building, address_point_building_association, SessionLocal
+from floorheights.datamodel.models import (
+    AddressPoint,
+    Building,
+    FloorMeasure,
+    Method,
+    Dataset,
+    address_point_building_association,
+    floor_measure_dataset_association,
+    SessionLocal,
+)
 
 
 @click.group()
@@ -134,6 +150,8 @@ def ingest_buildings(input_buildings, dem_file, chunksize):
     buildings["max_height_ahd"] = max_heights
     buildings = buildings.round({"min_height_ahd": 3, "max_height_ahd": 3})
 
+    # TODO: Handle building footprints overlapping the edge of the DEM
+
     # Remove any buildings that sample no data
     buildings = buildings[buildings["min_height_ahd"] != dem.nodata]
     buildings = buildings[buildings["max_height_ahd"] != dem.nodata]
@@ -246,11 +264,252 @@ def join_address_buildings(input_cadastre):
     click.echo("Joining complete")
 
 
+def psql_insert_copy(
+    table: pd.io.sql.SQLTable,
+    conn: Engine | Connection,
+    keys: list[str],
+    data_iter: Iterable,
+) -> None:
+    """Execute SQL statement inserting data
+
+    Source: https://pandas.pydata.org/docs/user_guide/io.html#io-sql-method
+
+    Parameters
+    ----------
+    table : pandas.io.sql.SQLTable
+    conn : sqlalchemy.engine.Engine or sqlalchemy.engine.Connection
+    keys : list of str
+        Column names
+    data_iter : Iterable that iterates the values to be inserted
+    """
+    # gets a DBAPI connection that can provide a cursor
+    dbapi_conn = conn.connection
+    with dbapi_conn.cursor() as cur:
+        s_buf = StringIO()
+        writer = csv.writer(s_buf)
+        writer.writerows(data_iter)
+        s_buf.seek(0)
+
+        columns = ', '.join(['"{}"'.format(k) for k in keys])
+        if table.schema:
+            table_name = '{}.{}'.format(table.schema, table.name)
+        else:
+            table_name = table.name
+
+        sql = 'COPY {} ({}) FROM STDIN WITH CSV'.format(
+            table_name, columns)
+        cur.copy_expert(sql=sql, file=s_buf)
+
+
+def get_or_create_method_id(session: Session, method_name: str) -> UUID:
+    """Retrieve the ID for a given method, creating it if it doesn't exist"""
+    method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
+    if not method_id:
+        click.echo(f"Inserting '{method_name}' into method table...")
+        method = Method(name=method_name)
+        session.add(method)
+        session.flush()
+        return method.id
+    return method_id[0]
+
+
+def get_or_create_dataset_id(
+    session: Session, dataset_name: str, dataset_desc: str, dataset_src: str
+) -> UUID:
+    """Retrieve the ID for a given dataset, creating it if it doesn't exist"""
+    dataset_id = session.execute(
+        select(Dataset.id).filter(Dataset.name == dataset_name)
+    ).first()
+    if not dataset_id:
+        click.echo(f"Inserting '{dataset_name}' into dataset table...")
+        dataset = Dataset(
+            name=dataset_name,
+            description=dataset_desc,
+            source=dataset_src
+        )
+        session.add(dataset)
+        session.flush()
+        return dataset.id
+    return dataset_id[0]
+
+
+def build_floor_measure_query(
+    temp_nexis: TableClause,
+    method_id: UUID,
+    accuracy_measure: float,
+    storey: int,
+    step_counting: bool = False,
+) -> Select:
+    """Build a SQL select query to insert into FloorMeasure with conditional filters"""
+    query = (
+        select(
+            func.gen_random_uuid().label("id"),
+            literal(storey).label("storey"),
+            temp_nexis.c.floor_height_m.label("height"),
+            literal(accuracy_measure).label("accuracy_measure"),
+            Building.id.label("building_id"),
+            literal(method_id).label("method_id"),
+            func.json_build_object(
+                'nexis_construction_type', temp_nexis.c.nexis_construction_type,
+                'nexis_year_built', temp_nexis.c.nexis_year_built,
+                'nexis_wall_type', temp_nexis.c.nexis_wall_type,
+                'generic_ext_wall', temp_nexis.c.generic_ext_wall,
+                'local_year_built', temp_nexis.c.local_year_built
+            ).label("aux_info"),
+        )
+        .select_from(Building)
+        .join(AddressPoint, Building.address_points)
+        .join(
+            temp_nexis,
+            temp_nexis.c.lid == AddressPoint.gnaf_id,
+        )
+        .filter(not_(Building.id.in_(select(FloorMeasure.building_id).distinct())))
+    )
+
+    if step_counting:
+        query = query.filter(func.mod(temp_nexis.c.floor_height_m, 0.28) == 0)
+
+    return query
+
+
+def insert_floor_measure(session: Session, select_query: Select) -> list:
+    """Insert records into the FloorMeasure table from a select query,
+    returning a list of the floor_measure ids that were inserted
+    """
+    ids = session.execute(
+        insert(FloorMeasure)
+        .from_select(
+            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id", "aux_info"],
+            select_query,
+        )
+        .on_conflict_do_nothing()
+        .returning(FloorMeasure.id)
+    )
+    return ids.all()
+
+
+def insert_floor_measure_dataset_association(
+    session: Session, nexis_dataset_id: UUID, floor_measure_inserted_ids: list
+) -> None:
+    """Insert records into the floor_measure_dataset_association table from a
+    NEXIS Dataset record id and a list of FloorMeasure ids
+    """
+    # Parse list of ids into a dict for inserting into the association table
+    floor_measure_dataset_values = [
+        {"floor_measure_id": row.id, "dataset_id": nexis_dataset_id}
+        for row in floor_measure_inserted_ids
+    ]
+    session.execute(
+        insert(floor_measure_dataset_association)
+        .values(floor_measure_dataset_values)
+        .on_conflict_do_nothing()
+    )
+
+
+@click.command()
+@click.option("-i", "--input-nexis", "input_nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")
+def ingest_nexis_method(input_nexis):
+    """Ingest NEXIS floor height method"""
+
+    session = SessionLocal()
+    engine = session.get_bind()
+    Base = declarative_base()
+
+    click.echo("Loading NEXIS points...")
+    nexis_df = pd.read_csv(
+        input_nexis,
+        usecols=[
+            "LID",
+            "floor_height_(m)",
+            "flood_vulnerability_function_id",
+            "NEXIS_CONSTRUCTION_TYPE",
+            "NEXIS_YEAR_BUILT",
+            "NEXIS_WALL_TYPE",
+            "GENERIC_EXT_WALL",
+            "LOCAL_YEAR_BUILT",
+        ],
+        dtype={
+            "LID": str,
+            "floor_height_(m)": float,
+            "NEXIS_CONSTRUCTION_TYPE": str,
+            "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
+            "NEXIS_WALL_TYPE": str,
+            "GENERIC_EXT_WALL": str,
+            "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
+        },
+    )
+    # Make column names lower case and remove parenthesis
+    nexis_df.columns = nexis_df.columns.str.lower().str.replace(
+        r"\(|\)", "", regex=True
+    )
+    nexis_df = nexis_df[
+        nexis_df["lid"].str.startswith("GNAF")
+    ]  # Drop rows that aren't a GNAF address
+    nexis_df["lid"] = nexis_df["lid"].str[5:]  # Remove "GNAF_" prefix
+
+    # Select gnaf_ids in the database
+    gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
+    gnaf_ids = [row[0] for row in gnaf_ids]
+
+    # Subset NEXIS data based on selection
+    nexis_df = nexis_df[nexis_df["lid"].isin(gnaf_ids)]
+
+    click.echo("Copying NEXIS points to PostgreSQL...")
+    nexis_df.to_sql(
+        "temp_nexis",
+        engine,
+        method=psql_insert_copy,
+        if_exists="replace",
+        dtype={
+            "floor_height_m": Numeric  # Set numeric so we don't need to type cast in the db
+        },
+    )
+    temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=engine)
+
+    # Get step_count and survey method ids
+    step_count_id = get_or_create_method_id(session, "Step counting")
+    survey_id = get_or_create_method_id(session, "Surveyed")
+
+    # TODO: Determine measure accuracies
+
+    # Build select query that will be inserted into the floor_measure table
+    step_count_query = build_floor_measure_query(
+        temp_nexis, step_count_id, 50, 0, step_counting=True
+    )
+    survey_query = build_floor_measure_query(
+        temp_nexis, survey_id, 90, 0, step_counting=False
+    )
+
+    click.echo("Inserting records into floor_measure table...")
+    # Insert into the floor_measure table and the ids of records inserted
+    step_count_ids = insert_floor_measure(session, step_count_query)
+    survey_ids = insert_floor_measure(session, survey_query)
+
+    floor_measure_inserted_ids = step_count_ids + survey_ids
+
+    if floor_measure_inserted_ids:
+        # If there are new floor_measure ids, get a dataset record for NEXIS
+        nexis_dataset_id = get_or_create_dataset_id(
+            session, "NEXIS", "NEXIS building points", "Geoscience Australia"
+        )
+        insert_floor_measure_dataset_association(
+            session, nexis_dataset_id, floor_measure_inserted_ids
+        )
+
+    session.commit()
+
+    temp_nexis.drop(engine)
+    session.commit()
+
+    click.echo("NEXIS ingestion complete")
+
+
 cli.add_command(create_dummy_address_point)
 cli.add_command(create_dummy_building)
 cli.add_command(ingest_address_points)
 cli.add_command(ingest_buildings)
 cli.add_command(join_address_buildings)
+cli.add_command(ingest_nexis_method)
 
 
 if __name__ == '__main__':
