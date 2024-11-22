@@ -1,14 +1,18 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from typing import Annotated
 import geoalchemy2.functions
 import geoalchemy2.functions
 from geojson_pydantic import FeatureCollection
 from pydantic import BaseModel
+import secrets
 import sqlalchemy
 import geoalchemy2
 from sqlalchemy import select
 from typing import Optional
 import uuid
 import json
+import os
 
 from floorheights.datamodel.models import (
     AddressPoint, Building, FloorMeasure,
@@ -24,10 +28,12 @@ Data model through a series of rest endpoints.
 Developed by FrontierSI (https://frontiersi.com.au/)
 """
 
+security = HTTPBasic()
 app = FastAPI(
     title="Floor Heights API",
     description=description,
     version='0.0.1',
+    dependencies=[Depends(security)]
 )
 
 
@@ -39,8 +45,40 @@ def get_db():
         db.close()
 
 
+def authenticated(credentials: HTTPBasicCredentials = Depends(security)):
+    username = os.environ['APP_USERNAME']
+    password = os.environ['APP_PASSWORD']
+
+    if (
+        (username is None or len(username) == 0) and 
+        (password is None or len(password) == 0)
+    ):
+        # no auth if username and password have not been set
+        return True
+
+    current_username_bytes = credentials.username.encode("utf8")
+    correct_username_bytes = username.encode("utf8")
+    is_correct_username = secrets.compare_digest(
+        current_username_bytes, correct_username_bytes
+    )
+    current_password_bytes = credentials.password.encode("utf8")
+    correct_password_bytes = password.encode("utf8")
+    is_correct_password = secrets.compare_digest(
+        current_password_bytes, correct_password_bytes
+    )
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return True
+
+
 @app.get("/api/")
-def read_root():
+def read_root(Authentication = Depends(authenticated)):
+    if Authentication:
+        pass
     return {"Hello": "Floor Heights API"}
 
 
@@ -48,7 +86,13 @@ def read_root():
     "/api/address-point-to-building/{address_point_id}/geom/",
     response_model=FeatureCollection
 )
-def read_source_ids(address_point_id: str, db: sqlalchemy.orm.Session = Depends(get_db)):
+def read_source_ids(
+    address_point_id: str,
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication = Depends(authenticated)
+):
+    if Authentication:
+        pass
     uuid_id = uuid.UUID(address_point_id)
 
     # do the join between addresses and buildings, craft a select statement that builds
@@ -95,9 +139,15 @@ class FloorMeasureWeb(BaseModel):
 
 @app.get(
     "/api/floor-height-data/{building_id}",
-    response_model=list[FloorMeasureWeb]
+    response_model=list[FloorMeasureWeb],
 )
-def get_floor_height_data(building_id: str, db: sqlalchemy.orm.Session = Depends(get_db)):
+def get_floor_height_data(
+    building_id: str,
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication = Depends(authenticated)
+):
+    if Authentication:
+        pass
     uuid_id = uuid.UUID(building_id)
 
     result: Building = db.get(Building, uuid_id)
@@ -120,4 +170,3 @@ def get_floor_height_data(building_id: str, db: sqlalchemy.orm.Session = Depends
         floor_measures.append(floor_measure)
 
     return floor_measures
-
