@@ -13,7 +13,7 @@ const TILESERVER_LAYER_DETAILS = [
 
 const COLOR_ADDRESS_POINT: string = '#3887BE';
 const COLOR_BUILDING: string = '#F6511D';
-const COLOR_ADDRESS_BUILDING_LINK: string = '#FFB400';
+const COLOR_ADDRESS_BUILDING_LINK: string = '#3887BE';
 
 export default class FloorHeightsMap {
   map: Map | null;
@@ -159,7 +159,8 @@ export default class FloorHeightsMap {
       'layout': {},
       'paint': {
         'line-color': COLOR_ADDRESS_BUILDING_LINK,
-        'line-width': 4
+        'line-width': 4,
+        "line-dasharray": ["literal", [3, 1]]
       },
     }, 'address_point');
   }
