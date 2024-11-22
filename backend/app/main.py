@@ -76,9 +76,7 @@ def authenticated(credentials: HTTPBasicCredentials = Depends(security)):
 
 
 @app.get("/api/")
-def read_root(Authentication = Depends(authenticated)):
-    if Authentication:
-        pass
+def read_root():
     return {"Hello": "Floor Heights API"}
 
 
