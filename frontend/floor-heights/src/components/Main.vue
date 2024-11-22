@@ -203,7 +203,7 @@ const fetchFloorMeasures = async (building_id: string) => {
 
       <div class="flex flex-1 flex-col min-h-0">
         <div class="flex h-full max-h-full">
-          <ScrollPanel class="flex h-full max-h-full">
+          <ScrollPanel class="flex h-full max-h-full w-full">
             <div>
               <FloorMeasureComponent v-for="fm in clickedFloorMeasures" :floorMeasure="fm"></FloorMeasureComponent>
             </div>
