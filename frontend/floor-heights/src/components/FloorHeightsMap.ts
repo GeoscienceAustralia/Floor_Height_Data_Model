@@ -167,6 +167,19 @@ export default class FloorHeightsMap {
     }, 'address_point');
   }
 
+  setMethodFilter(methods: string[]) {
+    if (methods.length == 0) {
+      this.map?.setFilter('building_fh', null);
+      return;
+    }
+    const filterExpression = [
+        "any",
+        ...methods.map(name => ["!", ["==", ["index-of", name, ["get", "method_names"]], -1]])
+    ];
+
+    this.map?.setFilter('building_fh', filterExpression);
+  }
+
   hideHighlightedFeature() {
     if (this.map?.getLayer('highlighted-feature')) {
       this.map?.removeLayer('highlighted-feature');

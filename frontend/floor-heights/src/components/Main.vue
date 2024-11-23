@@ -13,6 +13,9 @@ const toast = useToast();
 const map = ref();
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
+const showBuildingOutlineFilters = ref(false);
+const buildingOutlineMethodFilterOptions = ref<String[]>([]);
+const buildingOutlineMethodFilterSelection = ref<String[]>([]);
 
 const clickedAddressPoint = ref<AddressPoint | null>(null);
 const clickedBuilding = ref<Building | null>(null);
@@ -25,6 +28,20 @@ onMounted(async () => {
 
   map.value = new FloorHeightsMap();
   await map.value.createMap();
+
+  try {
+    buildingOutlineMethodFilterOptions.value = (await axios.get<String[]>(`api/methods/`)).data;
+  } catch (error) {
+    console.error(`Failed to fetch methods`);
+    toast.add(
+      {
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Failed to fetch method list',
+        life: 3000
+      }
+    );
+  }
 
   map.value.emitter.on('addressPointClicked', onAddressPointClicked);
   map.value.emitter.on('buildingClicked', onBuildingClicked);
@@ -39,6 +56,11 @@ watch(showAddressPoints, async (showAddressPoints, _) => {
 
 watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
   map.value.setBuildingOutlineVisibility(showBuildingOutlines);
+});
+
+watch(buildingOutlineMethodFilterSelection, async (methods, _) => {
+  console.log(methods);
+  map.value.setMethodFilter(methods);
 });
 
 const onAddressPointClicked = (clickedObject: any) => {
@@ -100,14 +122,46 @@ const fetchFloorMeasures = async (building_id: string) => {
           Select layers to show in map
         </div>
         <div class="flex items-center pl-2">
-          <Checkbox inputId="showAddressPoints" v-model="showAddressPoints" :binary="true" />
-          <label for="showAddressPoints" class="ml-2"> Address Points </label>
+          <div class="items-center">
+            <Checkbox inputId="showAddressPoints" v-model="showAddressPoints" :binary="true" />
+            <label for="showAddressPoints" class="ml-2"> Address Points </label>
+          </div>
         </div>
-        <div class="flex items-center pl-2">
-          <Checkbox inputId="showBuildingOutlines" v-model="showBuildingOutlines" :binary="true" />
-          <label for="showBuildingOutlines" class="ml-2"> Building Outlines </label>
+        <div class="flex pl-2 items-center justify-between">
+          <div class="items-center">
+            <Checkbox inputId="showBuildingOutlines" v-model="showBuildingOutlines" :binary="true" />
+            <label for="showBuildingOutlines" class="ml-2"> Building Outlines </label>
+          </div>
+          <ToggleButton
+            v-model="showBuildingOutlineFilters"
+            onIcon="pi pi-angle-up"
+            offIcon="pi pi-angle-down"
+            :pt="{
+              label: (options) => ({
+                style: {
+                  'width': 0,
+                  'height': 0,
+                  'visibility': 'hidden'
+                },
+              }),
+              root: (options) => ({
+                style: {
+                  'background-color':'unset',
+                  'border':'unset'
+                },
+              })
+            }"
+          />
         </div>
-      </div>      
+        <div v-if="showBuildingOutlineFilters" class="pl-10">
+          <MultiSelect
+            v-model="buildingOutlineMethodFilterSelection"
+            :options="buildingOutlineMethodFilterOptions"
+            placeholder="Filter for Methods"
+            class="w-full"
+          />
+        </div>
+      </div>
     </Panel>
 
     <Panel class="flex-none" v-if="clickedAddressPoint">

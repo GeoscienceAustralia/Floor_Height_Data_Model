@@ -37,14 +37,6 @@ Data model through a series of rest endpoints.
 Developed by FrontierSI (https://frontiersi.com.au/)
 """
 
-security = HTTPBasic()
-app = FastAPI(
-    title="Floor Heights API",
-    description=description,
-    version='0.0.1',
-    dependencies=[Depends(security)]
-)
-
 
 def get_db():
     db = SessionLocal()
@@ -197,3 +189,21 @@ def get_floor_height_data(
         floor_measures.append(floor_measure)
 
     return floor_measures
+
+
+@app.get(
+    "/api/methods/",
+    response_model=list[str],
+)
+def list_methods(
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication = Depends(authenticated)
+):
+    # return a simple list of all methods sorted alphabetically
+    if Authentication:
+        pass
+    return [
+        r[0] 
+        for r in db.query(Method.name).order_by(Method.name)
+    ]
+
