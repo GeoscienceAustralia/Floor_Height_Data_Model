@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from contextlib import asynccontextmanager
 from typing import Annotated
 import geoalchemy2.functions
 import geoalchemy2.functions
@@ -13,11 +14,19 @@ from typing import Optional
 import uuid
 import json
 import os
+from logging.config import dictConfig
+import logging
+
+from app.log import LogConfig
+dictConfig(LogConfig().dict())
+logger = logging.getLogger("floorheights")
 
 from floorheights.datamodel.models import (
-    AddressPoint, Building, FloorMeasure,
+    AddressPoint, Building, FloorMeasure, Method,
     SessionLocal
 )
+
+from app.martin import setup_building_layer_fn
 
 
 description = """
@@ -43,6 +52,26 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Do app initialization stuff here before the yield
+    db = next(get_db())
+    setup_building_layer_fn(db)
+    yield
+    # Clean up anything on server shutdown here
+    pass
+
+
+security = HTTPBasic()
+app = FastAPI(
+    title="Floor Heights API",
+    description=description,
+    version='0.0.1',
+    dependencies=[Depends(security)],
+    lifespan=lifespan
+)
 
 
 def authenticated(credentials: HTTPBasicCredentials = Depends(security)):
