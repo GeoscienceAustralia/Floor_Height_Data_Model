@@ -59,7 +59,6 @@ watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
 });
 
 watch(buildingOutlineMethodFilterSelection, async (methods, _) => {
-  console.log(methods);
   map.value.setMethodFilter(methods);
 });
 
