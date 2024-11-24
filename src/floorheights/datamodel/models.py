@@ -27,12 +27,12 @@ floor_measure_dataset_association = Table(
 )
 
 
-
 class AddressPoint(Base):
     __tablename__ = 'address_point'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default="gen_random_uuid()")
+    gnaf_id = Column(String(15), nullable=True)
     address = Column(String, nullable=False)
-    location = Column(Geometry(geometry_type='POINT'), nullable=False)
+    location = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
 
     # Many-to-Many relationship with Building
     buildings = relationship(
@@ -47,9 +47,10 @@ class AddressPoint(Base):
 
 class Building(Base):
     __tablename__ = 'building'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    outline = Column(Geometry(geometry_type='POLYGON'), nullable=False)
-    height_ahd = Column(Float, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default="gen_random_uuid()")
+    outline = Column(Geometry(geometry_type='POLYGON', srid=4326), nullable=False)
+    min_height_ahd = Column(Float, nullable=False)
+    max_height_ahd = Column(Float, nullable=False)
 
     # Many-to-Many relationship with AddressPoint
     address_points = relationship(
