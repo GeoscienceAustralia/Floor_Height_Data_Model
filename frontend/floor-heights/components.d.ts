@@ -13,6 +13,8 @@ declare module 'vue' {
     FloorMeasureComponent: typeof import('./src/components/FloorMeasureComponent.vue')['default']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     Main: typeof import('./src/components/Main.vue')['default']
+    MultiSelect: typeof import('primevue/multiselect')['default']
     Toast: typeof import('primevue/toast')['default']
+    ToggleButton: typeof import('primevue/togglebutton')['default']
   }
 }

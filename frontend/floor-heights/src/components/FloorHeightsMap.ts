@@ -9,11 +9,12 @@ import { EventEmitter } from '../util/EventEmitter';
 const TILESERVER_LAYER_DETAILS = [
   {name: 'address_point', idField: 'id'},
   {name: 'building', idField: 'id'},
+  {name: 'building_query', idField: 'id'}
 ];
 
 const COLOR_ADDRESS_POINT: string = '#3887BE';
 const COLOR_BUILDING: string = '#F6511D';
-const COLOR_ADDRESS_BUILDING_LINK: string = '#FFB400';
+const COLOR_ADDRESS_BUILDING_LINK: string = '#3887BE';
 
 export default class FloorHeightsMap {
   map: Map | null;
@@ -77,6 +78,7 @@ export default class FloorHeightsMap {
 
       this.map.on('click', 'building_fh', (e) => {
         let f = e.features?.[0];
+        console.log(f);
         this.highlightBuilding(f?.geometry as Polygon);
         this.emitter.emit('buildingClicked', f?.properties);
       });
@@ -94,8 +96,8 @@ export default class FloorHeightsMap {
       let buildingLayerDef:AddLayerObject = {
         'id': 'building_fh',
         'type': 'fill',
-        'source': 'building',
-        'source-layer': 'building',
+        'source': 'building_query',
+        'source-layer': 'building_query',
         'layout': {},
         'paint': {
           'fill-color': COLOR_BUILDING,
@@ -159,9 +161,23 @@ export default class FloorHeightsMap {
       'layout': {},
       'paint': {
         'line-color': COLOR_ADDRESS_BUILDING_LINK,
-        'line-width': 4
+        'line-width': 2,
+        "line-dasharray": ["literal", [3, 1]]
       },
     }, 'address_point');
+  }
+
+  setMethodFilter(methods: string[]) {
+    if (methods.length == 0) {
+      this.map?.setFilter('building_fh', null);
+      return;
+    }
+    const filterExpression = [
+        "any",
+        ...methods.map(name => ["!", ["==", ["index-of", name, ["get", "method_names"]], -1]])
+    ];
+
+    this.map?.setFilter('building_fh', filterExpression);
   }
 
   hideHighlightedFeature() {
