@@ -256,8 +256,8 @@ const fetchFloorMeasures = async (building_id: string) => {
       </template>
 
       <div class="flex flex-1 flex-col min-h-0">
-        <div class="flex h-full max-h-full">
-          <ScrollPanel class="flex h-full max-h-full w-full">
+        <div class="flex max-h-full min-h-0">
+          <ScrollPanel class="flex max-h-full w-full" style="height: unset;">
             <div>
               <FloorMeasureComponent v-for="fm in clickedFloorMeasures" :floorMeasure="fm"></FloorMeasureComponent>
             </div>
@@ -278,7 +278,7 @@ const fetchFloorMeasures = async (building_id: string) => {
   position: absolute;
   top: 20px;
   left: 20px;
-  bottom: 20px;
+  max-height: calc(100vh - 40px);
   width: 400px;
   z-index: 1; /* Ensures it stays above the map */
 }
