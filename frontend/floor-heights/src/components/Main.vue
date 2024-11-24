@@ -13,7 +13,7 @@ const toast = useToast();
 const map = ref();
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
-const showBuildingOutlineFilters = ref(false);
+const showBuildingOutlineFilters = ref(true);
 const buildingOutlineMethodFilterOptions = ref<String[]>([]);
 const buildingOutlineMethodFilterSelection = ref<String[]>([]);
 
