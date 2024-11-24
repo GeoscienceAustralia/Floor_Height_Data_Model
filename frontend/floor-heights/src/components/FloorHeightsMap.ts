@@ -161,7 +161,7 @@ export default class FloorHeightsMap {
       'layout': {},
       'paint': {
         'line-color': COLOR_ADDRESS_BUILDING_LINK,
-        'line-width': 4,
+        'line-width': 2,
         "line-dasharray": ["literal", [3, 1]]
       },
     }, 'address_point');
