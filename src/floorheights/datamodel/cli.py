@@ -567,11 +567,11 @@ def ingest_nexis_method(input_nexis):
 @click.command()
 @click.option("-i", "--input-data", "input_data", required=True, type=str, help="Input validation OGR dataset file path.")
 @click.option("-c", "--input-cadastre", "input_cadastre", required=True, type=str, help="Input cadastre OGR dataset file path to support address joining.")
-@click.option("--ffh-field", "ffh_field", type=str, required=True)
-@click.option("--step-size", "step_size", type=float, required=False, default=0.28)
-@click.option("--dataset-name", "dataset_name", type=str, required=False)
-@click.option("--dataset-desc", "dataset_desc", type=str, required=False)
-@click.option("--dataset-src", "dataset_src", type=str, required=False)
+@click.option("--ffh-field", "ffh_field", type=str, required=True, help="Name of the first floor height field.")
+@click.option("--step-size", "step_size", type=float, required=False, default=0.28, show_default=True, help="Step size value in metres.")
+@click.option("--dataset-name", "dataset_name", type=str, required=False, help="Dataset name.")
+@click.option("--dataset-desc", "dataset_desc", type=str, required=False, help="Dataset description.")
+@click.option("--dataset-src", "dataset_src", type=str, required=False, help="Dataset source.")
 def ingest_validation_method(
     input_data,
     input_cadastre,
