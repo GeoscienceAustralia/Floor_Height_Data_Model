@@ -6,6 +6,7 @@ import pandas as pd
 import rasterio
 from collections.abc import Iterable
 from io import StringIO
+from pathlib import Path
 from rasterio.mask import mask
 from shapely.geometry import box
 from sqlalchemy import Table, Numeric, select, and_, not_, literal
@@ -14,6 +15,7 @@ from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import Select, func, exists
 from sqlalchemy.sql.expression import TableClause
+from typing import Literal
 from uuid import UUID
 
 from floorheights.datamodel.models import (
@@ -350,9 +352,11 @@ def build_floor_measure_query(
     method_id: UUID,
     accuracy_measure: float,
     storey: int,
+    join_by: Literal['gnaf_id', 'cadastre'],
     gnaf_id_col: str = None,
     step_counting: bool = None,
     step_size: float = None,
+    cadastre: TableClause = None
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
     query = (
@@ -369,13 +373,39 @@ def build_floor_measure_query(
                 )
             ).label("aux_info"),
         )
-        .select_from(Building)
-        .join(AddressPoint, Building.address_points)
-        .join(
-            floor_measure_table,
-            floor_measure_table.c[gnaf_id_col] == AddressPoint.gnaf_id,
-        )
     )
+    if join_by == "gnaf_id":
+        # Join by GNAF ID matching
+        query = (
+            query.select_from(Building)
+            .join(AddressPoint, Building.address_points)
+            .join(
+                floor_measure_table,
+                floor_measure_table.c[gnaf_id_col] == AddressPoint.gnaf_id,
+            )
+        )
+    elif join_by == "cadastre":
+        # Join floor_measure point to cadastre polygon by nearest neighbour
+        # https://postgis.net/workshops/postgis-intro/knn.html
+        lateral_subquery = (
+            select(
+                cadastre.c.id.label("id"),
+                cadastre.c.geometry.label("geometry"),
+                (floor_measure_table.c.geometry.op("<->")(cadastre.c.geometry)).label(
+                    "dist"
+                ),
+            )
+            .order_by("dist")
+            .limit(1)
+            .lateral()
+        )
+        query = query.select_from(
+            # Join on True to make it a cross join
+            floor_measure_table.join(lateral_subquery, literal(True)).join(
+                AddressPoint,
+                func.ST_Within(AddressPoint.location, lateral_subquery.c.geometry),
+            )
+        ).join(Building, AddressPoint.buildings)
 
     if step_counting is True and step_size:
         # Select floor heights divisible by step_size
@@ -399,7 +429,6 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
             ["id", "storey", "height", "accuracy_measure", "building_id", "method_id", "aux_info"],
             select_query,
         )
-        .on_conflict_do_nothing()
         .returning(FloorMeasure.id)
     )
     return ids.all()
@@ -419,7 +448,6 @@ def insert_floor_measure_dataset_association(
     session.execute(
         insert(floor_measure_dataset_association)
         .values(floor_measure_dataset_values)
-        .on_conflict_do_nothing()
     )
 
 
@@ -497,6 +525,7 @@ def ingest_nexis_method(input_nexis):
         step_count_id,
         50,
         0,
+        join_by="gnaf_id",
         gnaf_id_col="lid",
         step_counting=True,
         step_size=0.28,
@@ -507,6 +536,7 @@ def ingest_nexis_method(input_nexis):
         survey_id,
         90,
         0,
+        join_by="gnaf_id",
         gnaf_id_col="lid",
         step_counting=False,
         step_size=0.28,
@@ -534,12 +564,126 @@ def ingest_nexis_method(input_nexis):
     click.echo("NEXIS ingestion complete")
 
 
+@click.command()
+@click.option("-i", "--input-data", "input_data", required=True, type=str, help="Input validation OGR dataset file path.")
+@click.option("-c", "--input-cadastre", "input_cadastre", required=True, type=str, help="Input cadastre OGR dataset file path to support address joining.")
+@click.option("--ffh-field", "ffh_field", type=str, required=True)
+@click.option("--step-size", "step_size", type=float, required=False, default=0.28)
+@click.option("--dataset-name", "dataset_name", type=str, required=False)
+@click.option("--dataset-desc", "dataset_desc", type=str, required=False)
+@click.option("--dataset-src", "dataset_src", type=str, required=False)
+def ingest_validation_method(
+    input_data,
+    input_cadastre,
+    ffh_field,
+    step_size,
+    dataset_name,
+    dataset_desc,
+    dataset_src,
+):
+    """Ingest validation floor height method"""
+    session = SessionLocal()
+    engine = session.get_bind()
+    Base = declarative_base()
+
+    # Read datasets into GeoDataFrames
+    try:
+        method_df = gpd.read_file(input_data)
+        method_df = method_df.to_crs(4326)
+    except Exception as error:
+        raise click.exceptions.FileError(input_data, error)
+    try:
+        cadastre_df = gpd.read_file(input_cadastre, columns=["geometry"])
+        cadastre_df = cadastre_df.to_crs(4326)
+    except Exception as error:
+        raise click.exceptions.FileError(input_data, error)
+
+    click.echo("Copying validation table to PostgreSQL...")
+    method_df.to_postgis(
+        "temp_method",
+        engine,
+        schema="public",
+        if_exists="replace",
+        index=True,
+        index_label="id",
+        dtype={
+            "floor_height_m": Numeric  # Set numeric so we don't need to type cast in the db
+        },
+    )
+    click.echo("Copying cadastre to PostgreSQL...")
+    cadastre_df.to_postgis(
+        "temp_cadastre",
+        engine,
+        schema="public",
+        if_exists="replace",
+        index=True,
+        index_label="id",
+    )
+
+    # Get temp table models from database
+    temp_method = Table("temp_method", Base.metadata, autoload_with=engine)
+    temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=engine)
+
+    step_count_id = get_or_create_method_id(session, "Step counting")
+    survey_id = get_or_create_method_id(session, "Surveyed")
+
+    # Build select queries that will be inserted into the floor_measure table
+    step_count_query = build_floor_measure_query(
+        temp_method,
+        ffh_field,
+        step_count_id,
+        50,
+        0,
+        join_by="cadastre",
+        step_counting=True,
+        step_size=step_size,
+        cadastre=temp_cadastre,
+    )
+    survey_query = build_floor_measure_query(
+        temp_method,
+        ffh_field,
+        survey_id,
+        90,
+        0,
+        join_by="cadastre",
+        step_counting=False,
+        step_size=step_size,
+        cadastre=temp_cadastre,
+    )
+
+    click.echo("Inserting records into floor_measure table...")
+    # Insert into the floor_measure table and get the ids of records inserted
+    step_count_ids = insert_floor_measure(session, step_count_query)
+    survey_ids = insert_floor_measure(session, survey_query)
+    validation_inserted_ids = step_count_ids + survey_ids
+
+    if validation_inserted_ids:
+        if not dataset_name:
+            dataset_name = Path(input_data).name
+
+        nexis_dataset_id = get_or_create_dataset_id(
+            session, dataset_name, dataset_desc, dataset_src
+        )
+        insert_floor_measure_dataset_association(
+            session, nexis_dataset_id, validation_inserted_ids
+        )
+
+    session.commit()
+
+    temp_method.drop(engine)
+    temp_cadastre.drop(engine)
+    session.commit()
+
+    click.echo("Validation ingestion complete")
+
+
 cli.add_command(create_dummy_address_point)
 cli.add_command(create_dummy_building)
 cli.add_command(ingest_address_points)
 cli.add_command(ingest_buildings)
 cli.add_command(join_address_buildings)
 cli.add_command(ingest_nexis_method)
+cli.add_command(ingest_validation_method)
 
 
 if __name__ == '__main__':
