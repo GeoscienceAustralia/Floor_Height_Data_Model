@@ -333,43 +333,59 @@ def get_or_create_dataset_id(
     return dataset_id[0]
 
 
+def build_aux_info_json(table: TableClause, ignore_columns: list) -> list:
+    """Dynamically build json_build_object function parameters for aux_info"""
+    columns = list(table.columns)
+
+    json_args = []
+    for column in columns:
+        if column.name not in ignore_columns:
+            json_args.extend([column.name, column])
+    return json_args
+
+
 def build_floor_measure_query(
-    temp_nexis: TableClause,
+    floor_measure_table: TableClause,
+    ffh_field: str,
     method_id: UUID,
     accuracy_measure: float,
     storey: int,
-    step_counting: bool = False,
+    gnaf_id_col: str = None,
+    step_counting: bool = None,
+    step_size: float = None,
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
     query = (
         select(
             func.gen_random_uuid().label("id"),
             literal(storey).label("storey"),
-            temp_nexis.c.floor_height_m.label("height"),
+            floor_measure_table.c[ffh_field].label("height"),
             literal(accuracy_measure).label("accuracy_measure"),
             Building.id.label("building_id"),
             literal(method_id).label("method_id"),
             func.json_build_object(
-                'flood_vulnerability_function_id', temp_nexis.c.flood_vulnerability_function_id,
-                'nexis_construction_type', temp_nexis.c.nexis_construction_type,
-                'nexis_year_built', temp_nexis.c.nexis_year_built,
-                'nexis_wall_type', temp_nexis.c.nexis_wall_type,
-                'generic_ext_wall', temp_nexis.c.generic_ext_wall,
-                'local_year_built', temp_nexis.c.local_year_built
+                *build_aux_info_json(
+                    floor_measure_table, ignore_columns=[ffh_field, "id", "geometry"]
+                )
             ).label("aux_info"),
         )
         .select_from(Building)
         .join(AddressPoint, Building.address_points)
         .join(
-            temp_nexis,
-            temp_nexis.c.lid == AddressPoint.gnaf_id,
+            floor_measure_table,
+            floor_measure_table.c[gnaf_id_col] == AddressPoint.gnaf_id,
         )
-        .filter(not_(Building.id.in_(select(FloorMeasure.building_id).distinct())))
     )
 
-    if step_counting:
-        query = query.filter(func.mod(temp_nexis.c.floor_height_m, 0.28) == 0)
-
+    if step_counting is True and step_size:
+        # Select floor heights divisible by step_size
+        query = query.filter(func.mod(floor_measure_table.c[ffh_field], step_size) == 0)
+    elif step_counting is False and step_size:
+        # Select floor_heights not divisible by step_size
+        # This retrieves the remaining floor heights for inserting into a different method
+        query = query.filter(
+            not_(func.mod(floor_measure_table.c[ffh_field], step_size) == 0)
+        )
     return query
 
 
@@ -476,21 +492,33 @@ def ingest_nexis_method(input_nexis):
 
     # Build select query that will be inserted into the floor_measure table
     step_count_query = build_floor_measure_query(
-        temp_nexis, step_count_id, 50, 0, step_counting=True
+        temp_nexis,
+        "floor_height_m",
+        step_count_id,
+        50,
+        0,
+        gnaf_id_col="lid",
+        step_counting=True,
+        step_size=0.28,
     )
     survey_query = build_floor_measure_query(
-        temp_nexis, survey_id, 90, 0, step_counting=False
+        temp_nexis,
+        "floor_height_m",
+        survey_id,
+        90,
+        0,
+        gnaf_id_col="lid",
+        step_counting=False,
+        step_size=0.28,
     )
 
     click.echo("Inserting records into floor_measure table...")
-    # Insert into the floor_measure table and the ids of records inserted
+    # Insert into the floor_measure table and get the ids of records inserted
     step_count_ids = insert_floor_measure(session, step_count_query)
     survey_ids = insert_floor_measure(session, survey_query)
-
     floor_measure_inserted_ids = step_count_ids + survey_ids
 
     if floor_measure_inserted_ids:
-        # If there are new floor_measure ids, get a dataset record for NEXIS
         nexis_dataset_id = get_or_create_dataset_id(
             session, "NEXIS", "NEXIS building points", "Geoscience Australia"
         )
