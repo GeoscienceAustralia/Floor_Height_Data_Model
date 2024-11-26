@@ -617,12 +617,15 @@ def ingest_validation_method(
         method_df = gpd.read_file(input_data)
         method_df = method_df.to_crs(4326)
     except Exception as error:
-        raise click.exceptions.FileError(input_data, error)
+        raise click.exceptions.FileError(Path(input_data).name, error)
     try:
         cadastre_df = gpd.read_file(input_cadastre, columns=["geometry"])
         cadastre_df = cadastre_df.to_crs(4326)
     except Exception as error:
-        raise click.exceptions.FileError(input_data, error)
+        raise click.exceptions.FileError(Path(input_data).name, error)
+
+    if ffh_field not in method_df.columns:
+        raise click.exceptions.BadParameter(f"Field '{ffh_field}' not found in input file")
 
     click.echo("Copying validation table to PostgreSQL...")
     method_df.to_postgis(
