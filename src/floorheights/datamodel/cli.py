@@ -399,13 +399,17 @@ def build_floor_measure_query(
             .limit(1)
             .lateral()
         )
-        query = query.select_from(
-            # Join on True to make it a cross join
-            floor_measure_table.join(lateral_subquery, literal(True)).join(
-                AddressPoint,
-                func.ST_Within(AddressPoint.location, lateral_subquery.c.geometry),
+        query = (
+            query.select_from(
+                # Join on True to make it a cross join
+                floor_measure_table.join(lateral_subquery, literal(True)).join(
+                    AddressPoint,
+                    func.ST_Within(AddressPoint.location, lateral_subquery.c.geometry),
+                )
             )
-        ).join(Building, AddressPoint.buildings)
+            .join(Building, AddressPoint.buildings)
+            .distinct(Building.id)
+        )
 
     if step_counting is True and step_size:
         # Select floor heights divisible by step_size
