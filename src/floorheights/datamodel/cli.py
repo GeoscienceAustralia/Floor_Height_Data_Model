@@ -633,7 +633,7 @@ def ingest_validation_method(
         index=True,
         index_label="id",
         dtype={
-            "floor_height_m": Numeric  # Set numeric so we don't need to type cast in the db
+            ffh_field: Numeric  # Set numeric so we don't need to type cast in the db
         },
     )
     click.echo("Copying cadastre to PostgreSQL...")
