@@ -627,6 +627,12 @@ def ingest_validation_method(
     if ffh_field not in method_df.columns:
         raise click.exceptions.BadParameter(f"Field '{ffh_field}' not found in input file")
 
+    method_df = method_df.rename(columns={ffh_field: "floor_height_m"})
+    # Make method input column names lower case and remove special characters
+    method_df.columns = method_df.columns.str.lower().str.replace(
+        r"\W+", "", regex=True
+    )
+
     click.echo("Copying validation table to PostgreSQL...")
     method_df.to_postgis(
         "temp_method",
@@ -635,9 +641,7 @@ def ingest_validation_method(
         if_exists="replace",
         index=True,
         index_label="id",
-        dtype={
-            ffh_field: Numeric  # Set numeric so we don't need to type cast in the db
-        },
+        dtype={"floor_height_m": Numeric},  # Set numeric so we don't need to type cast in the db
     )
     click.echo("Copying cadastre to PostgreSQL...")
     cadastre_df.to_postgis(
@@ -659,7 +663,7 @@ def ingest_validation_method(
     # Build select queries that will be inserted into the floor_measure table
     step_count_query = build_floor_measure_query(
         temp_method,
-        ffh_field,
+        "floor_height_m",
         step_count_id,
         50,
         0,
@@ -670,7 +674,7 @@ def ingest_validation_method(
     )
     survey_query = build_floor_measure_query(
         temp_method,
-        ffh_field,
+        "floor_height_m",
         survey_id,
         90,
         0,
