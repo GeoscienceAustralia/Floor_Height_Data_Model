@@ -13,8 +13,8 @@ from sqlalchemy import Table, Numeric, select, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, declarative_base
-from sqlalchemy.sql import Select, func, exists
-from sqlalchemy.sql.expression import TableClause
+from sqlalchemy.sql import Select, func, exists, text
+from sqlalchemy.sql.expression import TableClause, BinaryExpression
 from typing import Literal
 from uuid import UUID
 
@@ -335,15 +335,40 @@ def get_or_create_dataset_id(
     return dataset_id[0]
 
 
-def build_aux_info_json(table: TableClause, ignore_columns: list) -> list:
-    """Dynamically build json_build_object function parameters for aux_info"""
-    columns = list(table.columns)
+def build_aux_info_expression(table: Table, ignore_columns: list) -> BinaryExpression:
+    """Dynamically build json_build_object expression for the aux_info field
 
+    Input data (particularly validation data) will come from multiple sources,
+    so the number of arguments to the jsonb_build_object function will differ and
+    could exceed 100 (i.e. 50 fields).
+
+    If so, the expression is separated into chunks of 100 arguments, which are
+    then concatenated with the '||' operator.
+    """
+    columns = [col for col in table.columns if col.name not in ignore_columns]
     json_args = []
+    json_args_chunked = []
+
     for column in columns:
-        if column.name not in ignore_columns:
-            json_args.extend([column.name, column])
-    return json_args
+        json_args.extend([text(f"'{column.name}'"), column])
+        # When we reach 100 arguments (50 pairs), append the chunk and start a new one
+        if len(json_args) >= 100:
+            json_args_chunked.append(json_args)
+            json_args = []
+
+    # Append the chunk if there are remaining arguments
+    if json_args:
+        json_args_chunked.append(json_args)
+
+    # Build the SQL expression with jsonb_build_object functions
+    json_build_expr = func.jsonb_build_object(*json_args_chunked[0])
+
+    for chunk in json_args_chunked[1:]:
+        # Concatenate the chunks of json arguments using the '||' operator
+        # so we don't exceed the 100 parameter limit
+        json_build_expr = json_build_expr.op("||")(func.jsonb_build_object(*chunk))
+
+    return json_build_expr
 
 
 def build_floor_measure_query(
@@ -359,21 +384,18 @@ def build_floor_measure_query(
     cadastre: TableClause = None
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
-    query = (
-        select(
-            func.gen_random_uuid().label("id"),
-            literal(storey).label("storey"),
-            floor_measure_table.c[ffh_field].label("height"),
-            literal(accuracy_measure).label("accuracy_measure"),
-            Building.id.label("building_id"),
-            literal(method_id).label("method_id"),
-            func.json_build_object(
-                *build_aux_info_json(
-                    floor_measure_table, ignore_columns=[ffh_field, "id", "geometry"]
-                )
-            ).label("aux_info"),
-        )
+    query = select(
+        func.gen_random_uuid().label("id"),
+        literal(storey).label("storey"),
+        floor_measure_table.c[ffh_field].label("height"),
+        literal(accuracy_measure).label("accuracy_measure"),
+        Building.id.label("building_id"),
+        literal(method_id).label("method_id"),
+        build_aux_info_expression(
+            floor_measure_table, [ffh_field, "id", "geometry"]
+        ).label("aux_info"),
     )
+
     if join_by == "gnaf_id":
         # Join by GNAF ID matching
         query = (
