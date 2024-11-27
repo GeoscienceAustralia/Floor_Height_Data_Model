@@ -223,22 +223,35 @@ def join_address_buildings(input_cadastre, join_largest):
         # TODO: May need an extra processing step to deal with overlapping parcel geometries
 
         click.echo("Performing join with cadastre...")
-        # Selects address-building matches by joining to common cadastre lots, where buildings overlap the lot by 50% of its area
+        # Selects address-building matches by joining to common cadastre lots
         select_query = (
             select(
                 AddressPoint.id.label("address_point_id"),
                 Building.id.label("building_id"),
             )
-            .select_from(
-                AddressPoint.__table__.join(
-                    temp_cadastre,
-                    func.ST_Within(AddressPoint.location, temp_cadastre.c.geometry),
-                ).join(
-                    Building,
-                    func.ST_Intersects(Building.outline, temp_cadastre.c.geometry),
-                )
+            .select_from(AddressPoint)
+            .join(
+                temp_cadastre,
+                func.ST_Within(AddressPoint.location, temp_cadastre.c.geometry),
+            )
+            .join(
+                Building,
+                func.ST_Intersects(Building.outline, temp_cadastre.c.geometry),
             )
             .where(
+                # Join addresses where a building overlaps the lot by 50% of its area
+                func.ST_Area(
+                    func.ST_Intersection(Building.outline, temp_cadastre.c.geometry)
+                )
+                / func.ST_Area(Building.outline)
+                > 0.5,
+                # Don't insert records already joined by within
+                ~exists().where(
+                    address_point_building_association.c.address_point_id
+                    == AddressPoint.id
+                ),
+            )
+        )
 
         if join_largest:
             click.echo("Joining with largest building on lot...")
