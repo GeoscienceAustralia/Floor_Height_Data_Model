@@ -80,11 +80,22 @@ def ingest_address_points(input_address, chunksize):
     engine = session.get_bind()
 
     click.echo("Loading Geodatabase...")
-    address = gpd.read_file(input_address, columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS"])
+    address = gpd.read_file(
+        input_address,
+        columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS", "GEOCODE_TYPE"],
+    )
+    address = address[
+        (address.GEOCODE_TYPE == "BUILDING CENTROID")
+        | (address.GEOCODE_TYPE == "PROPERTY CENTROID")
+    ]
     address = address.to_crs(4326)
 
     address = address.rename(
-        columns={"COMPLETE_ADDRESS": "address", "ADDRESS_DETAIL_PID": "gnaf_id"}
+        columns={
+            "COMPLETE_ADDRESS": "address",
+            "ADDRESS_DETAIL_PID": "gnaf_id",
+            "GEOCODE_TYPE": "geocode_type",
+        }
     )
     address = address.rename_geometry("location")
 
@@ -191,9 +202,13 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
     click.echo("Performing join by contains...")
     # Selects address-building matches by buldings containing address points
-    select_query = select(
-        AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
-    ).join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
+    select_query = (
+        select(
+            AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
+        )
+        .join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
+        .where(AddressPoint.geocode_type == "BUILDING CENTROID")
+    )
 
     insert_query = (
         insert(address_point_building_association)
@@ -281,6 +296,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 Building,
                 func.ST_Intersects(Building.outline, temp_cadastre.c.geometry),
             )
+            .where(AddressPoint.geocode_type == "PROPERTY CENTROID")
             .where(
                 # Join addresses where a building overlaps the lot by 50% of its area
                 func.ST_Area(
@@ -289,10 +305,11 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 / func.ST_Area(Building.outline)
                 > 0.5,
                 # Don't insert records already joined by within
-                ~exists().where(
+                ~exists()
+                .where(
                     address_point_building_association.c.address_point_id
                     == AddressPoint.id
-                ),
+                )
             )
         )
 

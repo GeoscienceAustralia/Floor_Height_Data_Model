@@ -30,8 +30,9 @@ floor_measure_dataset_association = Table(
 class AddressPoint(Base):
     __tablename__ = 'address_point'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default="gen_random_uuid()")
-    gnaf_id = Column(String(15), nullable=True)
+    gnaf_id = Column(String(15), nullable=False)
     address = Column(String, nullable=False)
+    geocode_type = Column(String, nullable=True)
     location = Column(Geometry(geometry_type='POINT', srid=4326), nullable=False)
 
     # Many-to-Many relationship with Building
