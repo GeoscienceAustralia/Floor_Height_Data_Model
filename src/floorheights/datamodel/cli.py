@@ -175,19 +175,21 @@ def ingest_buildings(input_buildings, dem_file, chunksize):
 
 @click.command()
 @click.option("-c", "--input-cadastre", "input_cadastre", required=False, type=str, help="Input cadastre vector file path to support address joining.")
-def join_address_buildings(input_cadastre):
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join addresses to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")
+def join_address_buildings(input_cadastre, join_largest):
     """Join address points to building outlines"""
     session = SessionLocal()
     engine = session.get_bind()
     Base = declarative_base()
+
+    if join_largest and not input_cadastre:
+        raise click.UsageError("--join-largest-building must be used with --input-cadastre")
 
     click.echo("Performing join by contains...")
     # Selects address-building matches by buldings containing address points
     select_query = select(
         AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
     ).join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
-
-    # TODO: May want to consider using a materialised view instead of these queries
 
     insert_query = (
         insert(address_point_building_association)
@@ -202,9 +204,8 @@ def join_address_buildings(input_cadastre):
             cadastre_df = gpd.read_file(input_cadastre, columns=["geometry"])
             cadastre_df = cadastre_df.to_crs(4326)
         except Exception as error:
-            click.echo(f"An error occurred while loading the file: {error}")
             session.rollback()
-            return
+            raise click.FileError(Path(input_cadastre).name, error)
 
         click.echo("Copying cadastre to PostgreSQL...")
         cadastre_df.to_postgis(
@@ -238,19 +239,14 @@ def join_address_buildings(input_cadastre):
                 )
             )
             .where(
-                and_(
-                    func.ST_Area(
-                        func.ST_Intersection(Building.outline, temp_cadastre.c.geometry)
-                    )
-                    / func.ST_Area(Building.outline)
-                    > 0.5,
-                    ~exists().where(
-                        address_point_building_association.c.address_point_id
-                        == AddressPoint.id
-                    ),
-                )
-            )
-        )
+
+        if join_largest:
+            click.echo("Joining with largest building on lot...")
+            # Join to largest building for distinct address
+            select_query = select_query.order_by(
+                AddressPoint.id,
+                func.ST_Area(Building.outline).desc()
+            ).distinct(AddressPoint.id)
 
         insert_query = (
             insert(address_point_building_association)
