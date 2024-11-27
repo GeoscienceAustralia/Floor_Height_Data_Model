@@ -4,19 +4,20 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
+import uuid
 from collections.abc import Iterable
+from geoalchemy2 import Geometry
 from io import StringIO
 from pathlib import Path
 from rasterio.mask import mask
 from shapely.geometry import box
-from sqlalchemy import Table, Numeric, select, and_, not_, literal
+from sqlalchemy import Table, Column, Numeric, UUID, select, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, declarative_base
 from sqlalchemy.sql import Select, func, exists, text
 from sqlalchemy.sql.expression import TableClause, BinaryExpression
 from typing import Literal
-from uuid import UUID
 
 from floorheights.datamodel.models import (
     AddressPoint,
@@ -175,8 +176,9 @@ def ingest_buildings(input_buildings, dem_file, chunksize):
 
 @click.command()
 @click.option("-c", "--input-cadastre", "input_cadastre", required=False, type=str, help="Input cadastre vector file path to support address joining.")
+@click.option("--flatten-cadastre", "flatten_cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join addresses to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")
-def join_address_buildings(input_cadastre, join_largest):
+def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
     """Join address points to building outlines"""
     session = SessionLocal()
     engine = session.get_bind()
@@ -184,6 +186,8 @@ def join_address_buildings(input_cadastre, join_largest):
 
     if join_largest and not input_cadastre:
         raise click.UsageError("--join-largest-building must be used with --input-cadastre")
+    if flatten_cadastre and not input_cadastre:
+        raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
 
     click.echo("Performing join by contains...")
     # Selects address-building matches by buldings containing address points
@@ -220,7 +224,46 @@ def join_address_buildings(input_cadastre, join_largest):
         # Get temp_cadastre table model from database
         temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=engine)
 
-        # TODO: May need an extra processing step to deal with overlapping parcel geometries
+        if flatten_cadastre:
+            click.echo("Flattening cadastre geometries...")
+
+            boundaries_subquery = select(
+                func.ST_Dump(temp_cadastre.c.geometry).geom.label("geometry")
+            ).select_from(temp_cadastre).subquery()
+
+            boundaries_cte = select(
+                func.ST_Union(
+                    func.ST_ExteriorRing(boundaries_subquery.c.geometry)
+                ).label("geometry")
+            ).cte()
+
+            select_query = select(
+                func.gen_random_uuid().label("id"),
+                func.ST_Dump(func.ST_Polygonize(boundaries_cte.c.geometry)).geom.label(
+                    "geometry"
+                ),
+            )
+
+            # Create a temporary table to insert our select query into
+            flat_temp_cadastre = Table(
+                "flat_temp_cadastre",
+                Base.metadata,
+                Column("id", UUID(as_uuid=True), primary_key=True),
+                Column("geometry", Geometry(geometry_type='POLYGON', srid=4326)),
+            )
+            flat_temp_cadastre.create(engine)
+
+            insert_query = insert(flat_temp_cadastre).from_select(
+                ["id", "geometry"], select_query
+            )
+            session.execute(insert_query)
+            session.commit()
+
+            # Drop the original temp_cadastre table
+            temp_cadastre.drop(engine)
+
+            # Assign temp_cadastre table to the flat version for subsequent joining
+            temp_cadastre = Table("flat_temp_cadastre", Base.metadata, autoload_with=engine)
 
         click.echo("Performing join with cadastre...")
         # Selects address-building matches by joining to common cadastre lots
@@ -312,7 +355,7 @@ def psql_insert_copy(
         cur.copy_expert(sql=sql, file=s_buf)
 
 
-def get_or_create_method_id(session: Session, method_name: str) -> UUID:
+def get_or_create_method_id(session: Session, method_name: str) -> uuid.UUID:
     """Retrieve the ID for a given method, creating it if it doesn't exist"""
     method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
     if not method_id:
@@ -326,7 +369,7 @@ def get_or_create_method_id(session: Session, method_name: str) -> UUID:
 
 def get_or_create_dataset_id(
     session: Session, dataset_name: str, dataset_desc: str, dataset_src: str
-) -> UUID:
+) -> uuid.UUID:
     """Retrieve the ID for a given dataset, creating it if it doesn't exist"""
     dataset_id = session.execute(
         select(Dataset.id).filter(Dataset.name == dataset_name)
@@ -383,7 +426,7 @@ def build_aux_info_expression(table: Table, ignore_columns: list) -> BinaryExpre
 def build_floor_measure_query(
     floor_measure_table: TableClause,
     ffh_field: str,
-    method_id: UUID,
+    method_id: uuid.UUID,
     accuracy_measure: float,
     storey: int,
     join_by: Literal['gnaf_id', 'cadastre'],
@@ -470,7 +513,7 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
 
 
 def insert_floor_measure_dataset_association(
-    session: Session, nexis_dataset_id: UUID, floor_measure_inserted_ids: list
+    session: Session, nexis_dataset_id: uuid.UUID, floor_measure_inserted_ids: list
 ) -> None:
     """Insert records into the floor_measure_dataset_association table from a
     NEXIS Dataset record id and a list of FloorMeasure ids
