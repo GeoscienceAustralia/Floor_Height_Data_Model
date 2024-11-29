@@ -260,7 +260,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
         raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
 
     click.echo("Performing join by contains...")
-    # Selects address-building matches by buldings containing address points
+    # Selects address-building matches by buildings containing address points
     # for addresses geocoded to building centroids
     select_query = (
         select(
