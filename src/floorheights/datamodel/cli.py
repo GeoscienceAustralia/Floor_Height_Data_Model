@@ -137,7 +137,8 @@ def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.Geo
 @click.option("-i", "--input-buildings", "input_buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")
 @click.option("-d", "--input-dem", "dem_file", required=True, type=click.File(), help="Input DEM file path.")
 @click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
-def ingest_buildings(input_buildings, dem_file, chunksize):
+@click.option("--remove-small-buildings", "remove_small", type=float, is_flag=False, flag_value=30, default=None, show_default=True, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")
+def ingest_buildings(input_buildings, dem_file, chunksize, remove_small):
     """Ingest building footprints"""
     session = SessionLocal()
     engine = session.get_bind()
@@ -156,9 +157,13 @@ def ingest_buildings(input_buildings, dem_file, chunksize):
     click.echo("Loading building GeoParquet...")
     buildings = gpd.read_parquet(input_buildings.name, columns=["geometry"], bbox=mask_bbox)
     buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
+    buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
+
+    if remove_small:
+        click.echo(f"Removing buildings < {remove_small} m^2...")
+        buildings = buildings[buildings.area > remove_small]
 
     click.echo("Sampling DEM with buildings...")
-    buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
     min_heights, max_heights = sample_dem_with_buildings(dem, buildings)
     buildings["min_height_ahd"] = min_heights
     buildings["max_height_ahd"] = max_heights
