@@ -202,6 +202,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
     click.echo("Performing join by contains...")
     # Selects address-building matches by buldings containing address points
+    # for addresses geocoded to building centroids
     select_query = (
         select(
             AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
@@ -315,11 +316,59 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
         if join_largest:
             click.echo("Joining with largest building on lot...")
-            # Join to largest building for distinct address
+            # Join to largest building on the cadastral lot for distinct address
             select_query = select_query.order_by(
                 AddressPoint.id,
                 func.ST_Area(Building.outline).desc()
             ).distinct(AddressPoint.id)
+
+        insert_query = (
+            insert(address_point_building_association)
+            .from_select(["address_point_id", "building_id"], select_query)
+            .on_conflict_do_nothing()
+        )
+        session.execute(insert_query)
+
+        # Finish up by joining addresses to nearest neighbour buildings
+        # that aren't within the cadastre and are within a distance threshold
+        lateral_subquery = (
+            select(
+                AddressPoint.id.label("address_point_id"),
+                Building.id.label("building_id"),
+                Building.outline.label("outline"),
+                (AddressPoint.location.op("<->")(Building.outline)).label("dist"),
+            )
+            .order_by("dist")
+            .limit(1)
+            .lateral()
+        )
+
+        select_query = (
+            select(
+                AddressPoint.id.label("address_point_id"),
+                lateral_subquery.c.building_id.label("building_id"),
+            )
+            .select_from(AddressPoint)
+            .outerjoin(
+                temp_cadastre,
+                func.ST_Within(AddressPoint.location, temp_cadastre.c.geometry),
+            )
+            .join(lateral_subquery, literal(True))
+            .where(
+                temp_cadastre.c.geometry == None,
+                # Join addresses to building if it is within a distance threshold
+                func.ST_Distance(
+                    func.cast(AddressPoint.location, Geography),
+                    func.cast(lateral_subquery.c.outline, Geography),
+                )
+                < 10,
+                # Don't join to any buildings already joined
+                ~exists().where(
+                    address_point_building_association.c.building_id
+                    == lateral_subquery.c.building_id
+                ),
+            )
+        )
 
         insert_query = (
             insert(address_point_building_association)
