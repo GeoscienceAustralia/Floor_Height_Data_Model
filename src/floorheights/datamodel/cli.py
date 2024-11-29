@@ -162,7 +162,10 @@ def ingest_buildings(input_buildings, dem_file, chunksize, remove_small, remove_
 
     if remove_small:
         click.echo(f"Removing buildings < {remove_small} m^2...")
-        buildings = buildings[buildings.area > remove_small]
+        bool_mask = buildings.area > remove_small
+        buildings = buildings[bool_mask]
+        remove_count = (bool_mask).value_counts()[False]
+        click.echo(f"Removed {remove_count} buildings...")
 
     click.echo("Sampling DEM with buildings...")
     min_heights, max_heights = sample_dem_with_buildings(dem, buildings)
