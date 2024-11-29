@@ -6,7 +6,7 @@ import pandas as pd
 import rasterio
 import uuid
 from collections.abc import Iterable
-from geoalchemy2 import Geometry
+from geoalchemy2 import Geometry, Geography
 from io import StringIO
 from pathlib import Path
 from rasterio.mask import mask
