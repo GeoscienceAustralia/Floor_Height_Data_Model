@@ -626,9 +626,9 @@ def ingest_nexis_method(input_nexis):
             "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
         },
     )
-    # Make column names lower case and remove parenthesis
+    # Make NEXIS input column names lower case and remove special characters
     nexis_df.columns = nexis_df.columns.str.lower().str.replace(
-        r"\(|\)", "", regex=True
+        r"\W+", "", regex=True
     )
     nexis_df = nexis_df[
         nexis_df["lid"].str.startswith("GNAF")
