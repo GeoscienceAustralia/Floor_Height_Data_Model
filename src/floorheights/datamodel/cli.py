@@ -654,48 +654,27 @@ def ingest_nexis_method(input_nexis):
     )
     temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=engine)
 
-    # Get step_count and survey method ids
-    step_count_id = get_or_create_method_id(session, "Step counting")
-    survey_id = get_or_create_method_id(session, "Surveyed")
-
-    # TODO: Determine measure accuracies
-
     # Build select query that will be inserted into the floor_measure table
-    step_count_query = build_floor_measure_query(
+    modelled_query = build_floor_measure_query(
         temp_nexis,
         "floor_height_m",
-        step_count_id,
+        get_or_create_method_id(session, "Inverse transform sampling"),
         50,
         0,
         join_by="gnaf_id",
         gnaf_id_col="lid",
-        step_counting=True,
-        step_size=0.28,
-    )
-    survey_query = build_floor_measure_query(
-        temp_nexis,
-        "floor_height_m",
-        survey_id,
-        90,
-        0,
-        join_by="gnaf_id",
-        gnaf_id_col="lid",
-        step_counting=False,
-        step_size=0.28,
     )
 
     click.echo("Inserting records into floor_measure table...")
     # Insert into the floor_measure table and get the ids of records inserted
-    step_count_ids = insert_floor_measure(session, step_count_query)
-    survey_ids = insert_floor_measure(session, survey_query)
-    floor_measure_inserted_ids = step_count_ids + survey_ids
+    modelled_inserted_ids = insert_floor_measure(session, modelled_query)
 
-    if floor_measure_inserted_ids:
+    if modelled_inserted_ids:
         nexis_dataset_id = get_or_create_dataset_id(
-            session, "NEXIS", "NEXIS building points", "Geoscience Australia"
+            session, "NEXIS", "NEXIS flood exposure points", "Geoscience Australia"
         )
         insert_floor_measure_dataset_association(
-            session, nexis_dataset_id, floor_measure_inserted_ids
+            session, nexis_dataset_id, modelled_inserted_ids
         )
 
     session.commit()
