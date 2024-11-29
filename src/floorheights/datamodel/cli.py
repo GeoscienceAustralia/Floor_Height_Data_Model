@@ -11,10 +11,10 @@ from io import StringIO
 from pathlib import Path
 from rasterio.mask import mask
 from shapely.geometry import box
-from sqlalchemy import Table, Column, Numeric, UUID, select, and_, not_, literal
+from sqlalchemy import Table, Column, Numeric, UUID, select, delete, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy.orm import Session, declarative_base, aliased
 from sqlalchemy.sql import Select, func, exists, text
 from sqlalchemy.sql.expression import TableClause, BinaryExpression
 from typing import Literal
@@ -137,8 +137,8 @@ def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.Geo
 @click.option("-i", "--input-buildings", "input_buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")
 @click.option("-d", "--input-dem", "dem_file", required=True, type=click.File(), help="Input DEM file path.")
 @click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
-@click.option("--remove-small-buildings", "remove_small", type=float, is_flag=False, flag_value=30, default=None, show_default=True, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")
-def ingest_buildings(input_buildings, dem_file, chunksize, remove_small):
+@click.option("--remove-overlapping", "remove_overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")
+def ingest_buildings(input_buildings, dem_file, chunksize, remove_small, remove_overlapping):
     """Ingest building footprints"""
     session = SessionLocal()
     engine = session.get_bind()
@@ -186,6 +186,59 @@ def ingest_buildings(input_buildings, dem_file, chunksize, remove_small):
         index=False,
         chunksize=chunksize,
     )
+
+    if remove_overlapping:
+        click.echo("Removing overlapping buildings...")
+
+        # Alias so we can perform self-comparison
+        smaller = aliased(Building, name='smaller')
+        larger = aliased(Building, name='larger')
+
+        # Define a lateral subquery that finds larger buildings intersecting a smaller building
+        lateral_subquery = (
+            select(
+                larger.id,
+                larger.outline,
+            )
+            .where(
+                # Exclude identical buildings
+                smaller.id != larger.id,
+                # Ensure the 'smaller' building is actually smaller
+                func.ST_Area(smaller.outline) < func.ST_Area(larger.outline),
+                # Only consider buildings that intersect
+                func.ST_Intersects(smaller.outline, larger.outline),
+            )
+            .lateral()  # Use lateral to evaluate this subquery for each smaller building individually
+        )
+
+        # Main query to select distinct larger buildings that significantly overlap with smaller ones
+        select_query = (
+            select(
+                lateral_subquery.c.id,
+            )
+            .select_from(smaller)
+            .join(lateral_subquery, literal(True))  # Join on True to make it a cross lateral join
+            # Calculate the ratio of the intersection
+            .where(
+                (
+                    func.ST_Area(
+                        func.ST_Intersection(
+                            smaller.outline, lateral_subquery.c.outline
+                        )
+                    )
+                    / func.ST_Area(smaller.outline)
+                )
+                # If the ratio exceeds a threshold we select it for deletion
+                > remove_overlapping
+            )
+        ).distinct(lateral_subquery.c.id)
+
+        delete_stmt = delete(Building).where(Building.id.in_(select_query))
+        result = session.execute(delete_stmt)
+
+        click.echo(f"Removed {result.rowcount} overlapping buildings...")
+
+        session.commit()
 
     click.echo("Building ingestion complete")
 
