@@ -305,12 +305,10 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 )
                 / func.ST_Area(Building.outline)
                 > 0.5,
-                # Don't insert records already joined by within
-                ~exists()
-                .where(
-                    address_point_building_association.c.address_point_id
-                    == AddressPoint.id
-                )
+                # Don't join to any buildings already joined by within
+                ~exists().where(
+                    address_point_building_association.c.building_id == Building.id
+                ),
             )
         )
 
