@@ -760,7 +760,7 @@ def ingest_validation_method(
         temp_method,
         "floor_height_m",
         step_count_id,
-        50,
+        60,
         0,
         join_by="cadastre",
         step_counting=True,
