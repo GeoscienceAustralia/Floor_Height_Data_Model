@@ -64,15 +64,19 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--input-address", "input_address", required=True, type=click.Path(), help="Input address points (Geodatabase) file path.")
+@click.option("-i", "--input-address", "input_address", required=True, type=str, help="Input address points (Geodatabase) file path.")
 @click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
 def ingest_address_points(input_address, chunksize):
     """Ingest address points"""
     click.echo("Loading Geodatabase...")
-    address = etl.read_ogr_file(
-        input_address,
-        columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS", "GEOCODE_TYPE"],
-    )
+    try:
+        address = etl.read_ogr_file(
+            input_address,
+            columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS", "GEOCODE_TYPE"],
+        )
+    except Exception as error:
+        raise click.exceptions.FileError(Path(input_address).name, error)
+
     address = address[
         (address.GEOCODE_TYPE == "BUILDING CENTROID")
         | (address.GEOCODE_TYPE == "PROPERTY CENTROID")
@@ -110,8 +114,11 @@ def ingest_address_points(input_address, chunksize):
 def ingest_buildings(input_buildings, dem_file, chunksize, remove_small, remove_overlapping):
     """Ingest building footprints"""
     click.echo("Loading DEM...")
-    dem = rasterio.open(dem_file.name)
-    dem_crs = dem.crs
+    try:
+        dem = rasterio.open(dem_file.name)
+        dem_crs = dem.crs
+    except Exception as error:
+        raise click.exceptions.FileError(dem_file.name, error)
 
     click.echo("Creating mask...")
     bounds = dem.bounds
@@ -121,7 +128,11 @@ def ingest_buildings(input_buildings, dem_file, chunksize, remove_small, remove_
     mask_bbox = mask_df.total_bounds
 
     click.echo("Loading building GeoParquet...")
-    buildings = gpd.read_parquet(input_buildings.name, columns=["geometry"], bbox=mask_bbox)
+    try:
+        buildings = gpd.read_parquet(input_buildings.name, columns=["geometry"], bbox=mask_bbox)
+    except Exception as error:
+        raise click.exceptions.FileError(input_buildings.name, error)
+
     buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
     buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
 
@@ -197,7 +208,10 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
         if input_cadastre:
             click.echo("Loading cadastre...")
-            cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+            try:
+                cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+            except Exception as error:
+                raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
             click.echo("Copying cadastre to PostgreSQL...")
             cadastre_df.to_postgis(
@@ -246,36 +260,37 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 def ingest_nexis_method(input_nexis):
     """Ingest NEXIS floor height method"""
     click.echo("Loading NEXIS points...")
-    nexis_df = pd.read_csv(
-        input_nexis,
-        usecols=[
-            "LID",
-            "floor_height_(m)",
-            "flood_vulnerability_function_id",
-            "NEXIS_CONSTRUCTION_TYPE",
-            "NEXIS_YEAR_BUILT",
-            "NEXIS_WALL_TYPE",
-            "GENERIC_EXT_WALL",
-            "LOCAL_YEAR_BUILT",
-        ],
-        dtype={
-            "LID": str,
-            "floor_height_(m)": float,
-            "flood_vulnerability_function_id": str,
-            "NEXIS_CONSTRUCTION_TYPE": str,
-            "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
-            "NEXIS_WALL_TYPE": str,
-            "GENERIC_EXT_WALL": str,
-            "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
-        },
-    )
+    try:
+        nexis_df = pd.read_csv(
+            input_nexis,
+            usecols=[
+                "LID",
+                "floor_height_(m)",
+                "flood_vulnerability_function_id",
+                "NEXIS_CONSTRUCTION_TYPE",
+                "NEXIS_YEAR_BUILT",
+                "NEXIS_WALL_TYPE",
+                "GENERIC_EXT_WALL",
+                "LOCAL_YEAR_BUILT",
+            ],
+            dtype={
+                "LID": str,
+                "floor_height_(m)": float,
+                "flood_vulnerability_function_id": str,
+                "NEXIS_CONSTRUCTION_TYPE": str,
+                "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
+                "NEXIS_WALL_TYPE": str,
+                "GENERIC_EXT_WALL": str,
+                "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
+            },
+        )
+    except Exception as error:
+        raise click.exceptions.FileError(input_nexis.name, error)
+
     # Make NEXIS input column names lower case and remove special characters
-    nexis_df.columns = nexis_df.columns.str.lower().str.replace(
-        r"\W+", "", regex=True
-    )
-    nexis_df = nexis_df[
-        nexis_df["lid"].str.startswith("GNAF")
-    ]  # Drop rows that aren't a GNAF address
+    nexis_df.columns = nexis_df.columns.str.lower().str.replace(r"\W+", "", regex=True)
+    # Drop rows that aren't a GNAF address
+    nexis_df = nexis_df[nexis_df["lid"].str.startswith("GNAF")]
     nexis_df["lid"] = nexis_df["lid"].str[5:]  # Remove "GNAF_" prefix
 
     session = SessionLocal()
@@ -348,8 +363,15 @@ def ingest_validation_method(
 ):
     """Ingest validation floor height method"""
     # Read datasets into GeoDataFrames
-    method_df = etl.read_ogr_file(input_data)
-    cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+    try:
+        method_df = etl.read_ogr_file(input_data)
+    except Exception as error:
+        raise click.exceptions.FileError(Path(input_data).name, error)
+    try:
+        cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+    except Exception as error:
+        raise click.exceptions.FileError(Path(input_cadastre).name, error)
+
 
     if ffh_field not in method_df.columns:
         raise click.exceptions.BadParameter(f"Field '{ffh_field}' not found in input file")
