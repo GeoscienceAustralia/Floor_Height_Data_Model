@@ -1,12 +1,10 @@
 import click
 import geopandas as gpd
-import numpy as np
 import pandas as pd
 import rasterio
 from pathlib import Path
 from shapely.geometry import box
-from sqlalchemy import Table, Column, Numeric, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Table, Numeric, select
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -14,11 +12,6 @@ from floorheights.datamodel import etl
 from floorheights.datamodel.models import (
     AddressPoint,
     Building,
-    FloorMeasure,
-    Method,
-    Dataset,
-    address_point_building_association,
-    floor_measure_dataset_association,
     SessionLocal,
 )
 

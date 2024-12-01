@@ -14,21 +14,20 @@ from sqlalchemy import (
     Table,
     Column,
     Result,
-    Numeric,
     Integer,
+    Select,
+    BinaryExpression,
     select,
+    insert,
     delete,
-    and_,
     not_,
     exists,
     text,
     literal,
+    func
 )
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, aliased
-from sqlalchemy.sql import Select, func
-from sqlalchemy.sql.expression import TableClause, BinaryExpression
 from typing import Literal
 
 from floorheights.datamodel.models import (
@@ -359,7 +358,7 @@ def build_aux_info_expression(table: Table, ignore_columns: list) -> BinaryExpre
 
 
 def build_floor_measure_query(
-    floor_measure_table: TableClause,
+    floor_measure_table: Table,
     ffh_field: str,
     method_id: uuid.UUID,
     accuracy_measure: float,
@@ -368,7 +367,7 @@ def build_floor_measure_query(
     gnaf_id_col: str = None,
     step_counting: bool = None,
     step_size: float = None,
-    cadastre: TableClause = None,
+    cadastre: Table = None,
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
     select_query = select(
