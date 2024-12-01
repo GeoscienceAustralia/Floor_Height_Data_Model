@@ -4,19 +4,20 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
+import uuid
 from collections.abc import Iterable
+from geoalchemy2 import Geometry, Geography
 from io import StringIO
 from pathlib import Path
 from rasterio.mask import mask
 from shapely.geometry import box
-from sqlalchemy import Table, Numeric, select, and_, not_, literal
+from sqlalchemy import Table, Column, Numeric, UUID, select, delete, and_, not_, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy.orm import Session, declarative_base, aliased
 from sqlalchemy.sql import Select, func, exists, text
 from sqlalchemy.sql.expression import TableClause, BinaryExpression
 from typing import Literal
-from uuid import UUID
 
 from floorheights.datamodel.models import (
     AddressPoint,
@@ -79,11 +80,22 @@ def ingest_address_points(input_address, chunksize):
     engine = session.get_bind()
 
     click.echo("Loading Geodatabase...")
-    address = gpd.read_file(input_address, columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS"])
+    address = gpd.read_file(
+        input_address,
+        columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS", "GEOCODE_TYPE"],
+    )
+    address = address[
+        (address.GEOCODE_TYPE == "BUILDING CENTROID")
+        | (address.GEOCODE_TYPE == "PROPERTY CENTROID")
+    ]
     address = address.to_crs(4326)
 
     address = address.rename(
-        columns={"COMPLETE_ADDRESS": "address", "ADDRESS_DETAIL_PID": "gnaf_id"}
+        columns={
+            "COMPLETE_ADDRESS": "address",
+            "ADDRESS_DETAIL_PID": "gnaf_id",
+            "GEOCODE_TYPE": "geocode_type",
+        }
     )
     address = address.rename_geometry("location")
 
@@ -125,7 +137,9 @@ def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.Geo
 @click.option("-i", "--input-buildings", "input_buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")
 @click.option("-d", "--input-dem", "dem_file", required=True, type=click.File(), help="Input DEM file path.")
 @click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
-def ingest_buildings(input_buildings, dem_file, chunksize):
+@click.option("--remove-small", "remove_small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")
+@click.option("--remove-overlapping", "remove_overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")
+def ingest_buildings(input_buildings, dem_file, chunksize, remove_small, remove_overlapping):
     """Ingest building footprints"""
     session = SessionLocal()
     engine = session.get_bind()
@@ -144,9 +158,16 @@ def ingest_buildings(input_buildings, dem_file, chunksize):
     click.echo("Loading building GeoParquet...")
     buildings = gpd.read_parquet(input_buildings.name, columns=["geometry"], bbox=mask_bbox)
     buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
+    buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
+
+    if remove_small:
+        click.echo(f"Removing buildings < {remove_small} m^2...")
+        bool_mask = buildings.area > remove_small
+        buildings = buildings[bool_mask]
+        remove_count = (bool_mask).value_counts()[False]
+        click.echo(f"Removed {remove_count} buildings...")
 
     click.echo("Sampling DEM with buildings...")
-    buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
     min_heights, max_heights = sample_dem_with_buildings(dem, buildings)
     buildings["min_height_ahd"] = min_heights
     buildings["max_height_ahd"] = max_heights
@@ -170,24 +191,87 @@ def ingest_buildings(input_buildings, dem_file, chunksize):
         chunksize=chunksize,
     )
 
+    if remove_overlapping:
+        click.echo("Removing overlapping buildings...")
+
+        # Alias so we can perform self-comparison
+        smaller = aliased(Building, name='smaller')
+        larger = aliased(Building, name='larger')
+
+        # Define a lateral subquery that finds larger buildings intersecting a smaller building
+        lateral_subquery = (
+            select(
+                larger.id,
+                larger.outline,
+            )
+            .where(
+                # Exclude identical buildings
+                smaller.id != larger.id,
+                # Ensure the 'smaller' building is actually smaller
+                func.ST_Area(smaller.outline) < func.ST_Area(larger.outline),
+                # Only consider buildings that intersect
+                func.ST_Intersects(smaller.outline, larger.outline),
+            )
+            .lateral()  # Use lateral to evaluate this subquery for each smaller building individually
+        )
+
+        # Main query to select distinct larger buildings that significantly overlap with smaller ones
+        select_query = (
+            select(
+                lateral_subquery.c.id,
+            )
+            .select_from(smaller)
+            .join(lateral_subquery, literal(True))  # Join on True to make it a cross lateral join
+            # Calculate the ratio of the intersection
+            .where(
+                (
+                    func.ST_Area(
+                        func.ST_Intersection(
+                            smaller.outline, lateral_subquery.c.outline
+                        )
+                    )
+                    / func.ST_Area(smaller.outline)
+                )
+                # If the ratio exceeds a threshold we select it for deletion
+                > remove_overlapping
+            )
+        ).distinct(lateral_subquery.c.id)
+
+        delete_stmt = delete(Building).where(Building.id.in_(select_query))
+        result = session.execute(delete_stmt)
+
+        click.echo(f"Removed {result.rowcount} overlapping buildings...")
+
+        session.commit()
+
     click.echo("Building ingestion complete")
 
 
 @click.command()
 @click.option("-c", "--input-cadastre", "input_cadastre", required=False, type=str, help="Input cadastre vector file path to support address joining.")
-def join_address_buildings(input_cadastre):
+@click.option("--flatten-cadastre", "flatten_cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join addresses to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")
+def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
     """Join address points to building outlines"""
     session = SessionLocal()
     engine = session.get_bind()
     Base = declarative_base()
 
-    click.echo("Performing join by contains...")
-    # Selects address-building matches by buldings containing address points
-    select_query = select(
-        AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
-    ).join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
+    if join_largest and not input_cadastre:
+        raise click.UsageError("--join-largest-building must be used with --input-cadastre")
+    if flatten_cadastre and not input_cadastre:
+        raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
 
-    # TODO: May want to consider using a materialised view instead of these queries
+    click.echo("Performing join by contains...")
+    # Selects address-building matches by buildings containing address points
+    # for addresses geocoded to building centroids
+    select_query = (
+        select(
+            AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
+        )
+        .join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
+        .where(AddressPoint.geocode_type == "BUILDING CENTROID")
+    )
 
     insert_query = (
         insert(address_point_building_association)
@@ -202,9 +286,8 @@ def join_address_buildings(input_cadastre):
             cadastre_df = gpd.read_file(input_cadastre, columns=["geometry"])
             cadastre_df = cadastre_df.to_crs(4326)
         except Exception as error:
-            click.echo(f"An error occurred while loading the file: {error}")
             session.rollback()
-            return
+            raise click.FileError(Path(input_cadastre).name, error)
 
         click.echo("Copying cadastre to PostgreSQL...")
         cadastre_df.to_postgis(
@@ -219,36 +302,131 @@ def join_address_buildings(input_cadastre):
         # Get temp_cadastre table model from database
         temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=engine)
 
-        # TODO: May need an extra processing step to deal with overlapping parcel geometries
+        if flatten_cadastre:
+            click.echo("Flattening cadastre geometries...")
+
+            boundaries_subquery = select(
+                func.ST_Dump(temp_cadastre.c.geometry).geom.label("geometry")
+            ).select_from(temp_cadastre).subquery()
+
+            boundaries_cte = select(
+                func.ST_Union(
+                    func.ST_ExteriorRing(boundaries_subquery.c.geometry)
+                ).label("geometry")
+            ).cte()
+
+            select_query = select(
+                func.gen_random_uuid().label("id"),
+                func.ST_Dump(func.ST_Polygonize(boundaries_cte.c.geometry)).geom.label(
+                    "geometry"
+                ),
+            )
+
+            # Create a temporary table to insert our select query into
+            flat_temp_cadastre = Table(
+                "flat_temp_cadastre",
+                Base.metadata,
+                Column("id", UUID(as_uuid=True), primary_key=True),
+                Column("geometry", Geometry(geometry_type='POLYGON', srid=4326)),
+            )
+            flat_temp_cadastre.create(engine)
+
+            insert_query = insert(flat_temp_cadastre).from_select(
+                ["id", "geometry"], select_query
+            )
+            session.execute(insert_query)
+            session.commit()
+
+            # Drop the original temp_cadastre table
+            temp_cadastre.drop(engine)
+
+            # Assign temp_cadastre table to the flat version for subsequent joining
+            temp_cadastre = Table("flat_temp_cadastre", Base.metadata, autoload_with=engine)
 
         click.echo("Performing join with cadastre...")
-        # Selects address-building matches by joining to common cadastre lots, where buildings overlap the lot by 50% of its area
+        # Selects address-building matches by joining to common cadastre lots
         select_query = (
             select(
                 AddressPoint.id.label("address_point_id"),
                 Building.id.label("building_id"),
             )
-            .select_from(
-                AddressPoint.__table__.join(
-                    temp_cadastre,
-                    func.ST_Within(AddressPoint.location, temp_cadastre.c.geometry),
-                ).join(
-                    Building,
-                    func.ST_Intersects(Building.outline, temp_cadastre.c.geometry),
-                )
+            .select_from(AddressPoint)
+            .join(
+                temp_cadastre,
+                func.ST_Within(AddressPoint.location, temp_cadastre.c.geometry),
             )
+            .join(
+                Building,
+                func.ST_Intersects(Building.outline, temp_cadastre.c.geometry),
+            )
+            .where(AddressPoint.geocode_type == "PROPERTY CENTROID")
             .where(
-                and_(
-                    func.ST_Area(
-                        func.ST_Intersection(Building.outline, temp_cadastre.c.geometry)
-                    )
-                    / func.ST_Area(Building.outline)
-                    > 0.5,
-                    ~exists().where(
-                        address_point_building_association.c.address_point_id
-                        == AddressPoint.id
-                    ),
+                # Join addresses where a building overlaps the lot by 50% of its area
+                func.ST_Area(
+                    func.ST_Intersection(Building.outline, temp_cadastre.c.geometry)
                 )
+                / func.ST_Area(Building.outline)
+                > 0.5,
+                # Don't join to any buildings already joined by within
+                ~exists().where(
+                    address_point_building_association.c.building_id == Building.id
+                ),
+            )
+        )
+
+        if join_largest:
+            click.echo("Joining with largest building on lot...")
+            # Join to largest building on the cadastral lot for distinct address
+            select_query = select_query.order_by(
+                AddressPoint.id,
+                func.ST_Area(Building.outline).desc()
+            ).distinct(AddressPoint.id)
+
+        insert_query = (
+            insert(address_point_building_association)
+            .from_select(["address_point_id", "building_id"], select_query)
+            .on_conflict_do_nothing()
+        )
+        session.execute(insert_query)
+
+        # Finish up by joining addresses to nearest neighbour buildings
+        # that aren't within the cadastre and are within a distance threshold
+        lateral_subquery = (
+            select(
+                AddressPoint.id.label("address_point_id"),
+                Building.id.label("building_id"),
+                Building.outline.label("outline"),
+                (AddressPoint.location.op("<->")(Building.outline)).label("dist"),
+            )
+            .order_by("dist")
+            .limit(1)
+            .lateral()
+        )
+
+        select_query = (
+            select(
+                AddressPoint.id.label("address_point_id"),
+                lateral_subquery.c.building_id.label("building_id"),
+            )
+            .select_from(AddressPoint)
+            .outerjoin(
+                temp_cadastre,
+                func.ST_Within(AddressPoint.location, temp_cadastre.c.geometry),
+            )
+            .join(lateral_subquery, literal(True))
+            .where(
+                temp_cadastre.c.geometry == None,
+                # Join addresses to building if it is within a distance threshold
+                func.ST_Distance(
+                    func.cast(AddressPoint.location, Geography),
+                    func.cast(lateral_subquery.c.outline, Geography),
+                )
+                < 10,
+                # Don't join to any buildings already joined
+                ~exists().where(
+                    address_point_building_association.c.building_id
+                    == lateral_subquery.c.building_id
+                ),
             )
         )
 
@@ -303,7 +481,7 @@ def psql_insert_copy(
         cur.copy_expert(sql=sql, file=s_buf)
 
 
-def get_or_create_method_id(session: Session, method_name: str) -> UUID:
+def get_or_create_method_id(session: Session, method_name: str) -> uuid.UUID:
     """Retrieve the ID for a given method, creating it if it doesn't exist"""
     method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
     if not method_id:
@@ -317,7 +495,7 @@ def get_or_create_method_id(session: Session, method_name: str) -> UUID:
 
 def get_or_create_dataset_id(
     session: Session, dataset_name: str, dataset_desc: str, dataset_src: str
-) -> UUID:
+) -> uuid.UUID:
     """Retrieve the ID for a given dataset, creating it if it doesn't exist"""
     dataset_id = session.execute(
         select(Dataset.id).filter(Dataset.name == dataset_name)
@@ -374,7 +552,7 @@ def build_aux_info_expression(table: Table, ignore_columns: list) -> BinaryExpre
 def build_floor_measure_query(
     floor_measure_table: TableClause,
     ffh_field: str,
-    method_id: UUID,
+    method_id: uuid.UUID,
     accuracy_measure: float,
     storey: int,
     join_by: Literal['gnaf_id', 'cadastre'],
@@ -461,7 +639,7 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
 
 
 def insert_floor_measure_dataset_association(
-    session: Session, nexis_dataset_id: UUID, floor_measure_inserted_ids: list
+    session: Session, nexis_dataset_id: uuid.UUID, floor_measure_inserted_ids: list
 ) -> None:
     """Insert records into the floor_measure_dataset_association table from a
     NEXIS Dataset record id and a list of FloorMeasure ids
@@ -510,9 +688,9 @@ def ingest_nexis_method(input_nexis):
             "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
         },
     )
-    # Make column names lower case and remove parenthesis
+    # Make NEXIS input column names lower case and remove special characters
     nexis_df.columns = nexis_df.columns.str.lower().str.replace(
-        r"\(|\)", "", regex=True
+        r"\W+", "", regex=True
     )
     nexis_df = nexis_df[
         nexis_df["lid"].str.startswith("GNAF")
@@ -538,48 +716,27 @@ def ingest_nexis_method(input_nexis):
     )
     temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=engine)
 
-    # Get step_count and survey method ids
-    step_count_id = get_or_create_method_id(session, "Step counting")
-    survey_id = get_or_create_method_id(session, "Surveyed")
-
-    # TODO: Determine measure accuracies
-
     # Build select query that will be inserted into the floor_measure table
-    step_count_query = build_floor_measure_query(
+    modelled_query = build_floor_measure_query(
         temp_nexis,
         "floor_height_m",
-        step_count_id,
+        get_or_create_method_id(session, "Inverse transform sampling"),
         50,
         0,
         join_by="gnaf_id",
         gnaf_id_col="lid",
-        step_counting=True,
-        step_size=0.28,
-    )
-    survey_query = build_floor_measure_query(
-        temp_nexis,
-        "floor_height_m",
-        survey_id,
-        90,
-        0,
-        join_by="gnaf_id",
-        gnaf_id_col="lid",
-        step_counting=False,
-        step_size=0.28,
     )
 
     click.echo("Inserting records into floor_measure table...")
     # Insert into the floor_measure table and get the ids of records inserted
-    step_count_ids = insert_floor_measure(session, step_count_query)
-    survey_ids = insert_floor_measure(session, survey_query)
-    floor_measure_inserted_ids = step_count_ids + survey_ids
+    modelled_inserted_ids = insert_floor_measure(session, modelled_query)
 
-    if floor_measure_inserted_ids:
+    if modelled_inserted_ids:
         nexis_dataset_id = get_or_create_dataset_id(
-            session, "NEXIS", "NEXIS building points", "Geoscience Australia"
+            session, "NEXIS", "NEXIS flood exposure points", "Geoscience Australia"
         )
         insert_floor_measure_dataset_association(
-            session, nexis_dataset_id, floor_measure_inserted_ids
+            session, nexis_dataset_id, modelled_inserted_ids
         )
 
     session.commit()
@@ -665,7 +822,7 @@ def ingest_validation_method(
         temp_method,
         "floor_height_m",
         step_count_id,
-        50,
+        60,
         0,
         join_by="cadastre",
         step_counting=True,
