@@ -17,7 +17,6 @@ from sqlalchemy import (
     Select,
     BinaryExpression,
     select,
-    insert,
     delete,
     not_,
     exists,
@@ -25,6 +24,7 @@ from sqlalchemy import (
     literal,
     func
 )
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, aliased
 from typing import Literal
