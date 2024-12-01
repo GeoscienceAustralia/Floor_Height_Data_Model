@@ -413,8 +413,8 @@ def build_floor_measure_query(
             .limit(1)
             .lateral()
         )
-        query = (
-            query.select_from(
+        select_query = (
+            select_query.select_from(
                 # Join on True to make it a cross join
                 floor_measure_table.join(lateral_subquery, literal(True)).join(
                     AddressPoint,
@@ -427,14 +427,14 @@ def build_floor_measure_query(
 
     if step_counting is True and step_size:
         # Select floor heights divisible by step_size
-        query = query.filter(func.mod(floor_measure_table.c[ffh_field], step_size) == 0)
+        select_query = select_query.filter(func.mod(floor_measure_table.c[ffh_field], step_size) == 0)
     elif step_counting is False and step_size:
         # Select floor_heights not divisible by step_size
         # This retrieves the remaining floor heights for inserting into a different method
-        query = query.filter(
+        select_query = select_query.filter(
             not_(func.mod(floor_measure_table.c[ffh_field], step_size) == 0)
         )
-    return query
+    return select_query
 
 
 def insert_floor_measure(session: Session, select_query: Select) -> list:
