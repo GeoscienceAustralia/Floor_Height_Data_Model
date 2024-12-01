@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from geoalchemy2 import Geometry, Geography
 from io import StringIO
 from pathlib import Path
+from pyproj import CRS
 from rasterio.mask import mask
 from sqlalchemy import (
     Table,
@@ -40,6 +41,24 @@ from floorheights.datamodel.models import (
     address_point_building_association,
     floor_measure_dataset_association,
 )
+
+
+def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
+    """Read OGR file into GeoDataFrame
+
+    If the input OGR file's geodetic datum is GDA1994, transform it to GDA2020.
+    Subsequently transform to WGS1984 for ingestion into PostgreSQL.
+    """
+    try:
+        input_file = Path(input_file)
+        gdf = gpd.read_file(input_file, **kwargs)
+        if gdf.crs.geodetic_crs.equals(CRS.from_epsg(4283).geodetic_crs):
+            gdf = gdf.to_crs(7844)
+        gdf = gdf.to_crs(4326)
+        return gdf
+    except Exception as error:
+        raise click.exceptions.FileError(input_file.name, error)
+
 
 def psql_insert_copy(
     table: pd.io.sql.SQLTable,

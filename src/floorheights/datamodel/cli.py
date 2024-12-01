@@ -69,7 +69,7 @@ def create_dummy_building():
 def ingest_address_points(input_address, chunksize):
     """Ingest address points"""
     click.echo("Loading Geodatabase...")
-    address = gpd.read_file(
+    address = etl.read_ogr_file(
         input_address,
         columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS", "GEOCODE_TYPE"],
     )
@@ -77,8 +77,6 @@ def ingest_address_points(input_address, chunksize):
         (address.GEOCODE_TYPE == "BUILDING CENTROID")
         | (address.GEOCODE_TYPE == "PROPERTY CENTROID")
     ]
-    address = address.to_crs(4326)
-
     address = address.rename(
         columns={
             "COMPLETE_ADDRESS": "address",
@@ -199,12 +197,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
         if input_cadastre:
             click.echo("Loading cadastre...")
-            try:
-                cadastre_df = gpd.read_file(input_cadastre, columns=["geometry"])
-                cadastre_df = cadastre_df.to_crs(4326)
-            except Exception as error:
-                session.rollback()
-                raise click.FileError(Path(input_cadastre).name, error)
+            cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
 
             click.echo("Copying cadastre to PostgreSQL...")
             cadastre_df.to_postgis(
@@ -355,16 +348,8 @@ def ingest_validation_method(
 ):
     """Ingest validation floor height method"""
     # Read datasets into GeoDataFrames
-    try:
-        method_df = gpd.read_file(input_data)
-        method_df = method_df.to_crs(4326)
-    except Exception as error:
-        raise click.exceptions.FileError(Path(input_data).name, error)
-    try:
-        cadastre_df = gpd.read_file(input_cadastre, columns=["geometry"])
-        cadastre_df = cadastre_df.to_crs(4326)
-    except Exception as error:
-        raise click.exceptions.FileError(Path(input_data).name, error)
+    method_df = etl.read_ogr_file(input_data)
+    cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
 
     if ffh_field not in method_df.columns:
         raise click.exceptions.BadParameter(f"Field '{ffh_field}' not found in input file")
