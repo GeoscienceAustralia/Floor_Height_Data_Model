@@ -10,8 +10,20 @@ from geoalchemy2 import Geometry, Geography
 from io import StringIO
 from pathlib import Path
 from rasterio.mask import mask
-from shapely.geometry import box
-from sqlalchemy import Table, Column, Numeric, Integer, select, delete, and_, not_, text, literal
+from sqlalchemy import (
+    Table,
+    Column,
+    Result,
+    Numeric,
+    Integer,
+    select,
+    delete,
+    and_,
+    not_,
+    exists,
+    text,
+    literal,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
 from sqlalchemy.orm import Session, aliased
@@ -85,6 +97,184 @@ def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.Geo
         max_heights.append(max_height)
 
     return min_heights, max_heights
+
+
+def remove_overlapping_geoms(session: Session, overlap_threshold: float) -> Result:
+    """Remove overlapping geometries"""
+    # Alias so we can perform self-comparison
+    smaller = aliased(Building, name="smaller")
+    larger = aliased(Building, name="larger")
+
+    # Define a lateral subquery that finds larger buildings intersecting a smaller building
+    lateral_subquery = (
+        select(
+            larger.id,
+            larger.outline,
+        )
+        .where(
+            # Exclude identical buildings
+            smaller.id != larger.id,
+            # Ensure the 'smaller' building is actually smaller
+            func.ST_Area(smaller.outline) < func.ST_Area(larger.outline),
+            # Only consider buildings that intersect
+            func.ST_Intersects(smaller.outline, larger.outline),
+        )
+        .lateral()  # Use lateral to evaluate this subquery for each smaller building individually
+    )
+
+    # Main query to select distinct larger buildings that significantly overlap with smaller ones
+    select_query = (
+        select(
+            lateral_subquery.c.id,
+        )
+        .select_from(smaller)
+        .join(lateral_subquery, literal(True))  # Join on True to make it a cross lateral join
+        # Calculate the ratio of the intersection
+        .where(
+            (
+                func.ST_Area(
+                    func.ST_Intersection(
+                        smaller.outline, lateral_subquery.c.outline
+                    )
+                )
+                / func.ST_Area(smaller.outline)
+            )
+            # If the ratio exceeds a threshold we select it for deletion
+            > overlap_threshold
+        )
+    ).distinct(lateral_subquery.c.id)
+
+    delete_stmt = delete(Building).where(Building.id.in_(select_query))
+    return session.execute(delete_stmt)
+
+
+def flatten_cadastre_geoms(
+    session: Session, conn: Connection, Base, temp_cadastre: Table
+) -> Table:
+    """flatten cadastre geometries"""
+    boundaries_subquery = (
+        select(func.ST_Dump(temp_cadastre.c.geometry).geom.label("geometry"))
+        .select_from(temp_cadastre)
+        .subquery()
+    )
+
+    boundaries_cte = select(
+        func.ST_Union(func.ST_ExteriorRing(boundaries_subquery.c.geometry)).label(
+            "geometry"
+        )
+    ).cte()
+
+    select_query = select(
+        func.ST_Dump(func.ST_Polygonize(boundaries_cte.c.geometry)).geom.label(
+            "geometry"
+        ),
+    )
+
+    # Create a temporary table to insert the select query into
+    flat_temp_cadastre = Table(
+        "flat_temp_cadastre",
+        Base.metadata,
+        Column("id", Integer, primary_key=True),
+        Column("geometry", Geometry(geometry_type="POLYGON", srid=4326)),
+    )
+    flat_temp_cadastre.create(conn)
+
+    insert_query = insert(temp_cadastre).from_select(
+        ["geometry"], select_query
+    )
+    session.execute(insert_query)
+
+    temp_cadastre.drop(conn)  # Drop the original temp_cadastre table
+    # Rename the flat_temp_cadastre table
+    session.execute(text("ALTER TABLE flat_temp_cadastre RENAME temp_cadastre"))
+
+    # Return flat cadastre metadata for subsequent joining
+    return Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+
+def build_address_match_query(cadastre: Table) -> Select:
+    """Build address matching query"""
+    select_query = (
+        select(
+            AddressPoint.id.label("address_point_id"),
+            Building.id.label("building_id"),
+        )
+        .select_from(AddressPoint)
+        .join(
+            cadastre,
+            func.ST_Within(AddressPoint.location, cadastre.c.geometry),
+        )
+        .join(
+            Building,
+            func.ST_Intersects(Building.outline, cadastre.c.geometry),
+        )
+        .where(AddressPoint.geocode_type == "PROPERTY CENTROID")
+        .where(
+            # Join addresses where a building overlaps the lot by 50% of its area
+            func.ST_Area(func.ST_Intersection(Building.outline, cadastre.c.geometry))
+            / func.ST_Area(Building.outline)
+            > 0.5,
+            # Don't join to any buildings already joined by within
+            ~exists().where(
+                address_point_building_association.c.building_id == Building.id
+            ),
+        )
+    )
+
+    return select_query
+
+
+def build_knn_address_match_query(cadastre: Table, distance: int) -> Select:
+    """Build K-Nearest Neighbour address matching query"""
+    lateral_subquery = (
+        select(
+            AddressPoint.id.label("address_point_id"),
+            Building.id.label("building_id"),
+            Building.outline.label("outline"),
+            (AddressPoint.location.op("<->")(Building.outline)).label("dist"),
+        )
+        .order_by("dist")
+        .limit(1)
+        .lateral()
+    )
+
+    select_query = (
+        select(
+            AddressPoint.id.label("address_point_id"),
+            lateral_subquery.c.building_id.label("building_id"),
+        )
+        .select_from(AddressPoint)
+        .outerjoin(
+            cadastre,
+            func.ST_Within(AddressPoint.location, cadastre.c.geometry),
+        )
+        .join(lateral_subquery, literal(True))
+        .where(
+            cadastre.c.geometry == None,
+            # Join addresses to building if it is within a distance threshold
+            func.ST_Distance(
+                func.cast(AddressPoint.location, Geography),
+                func.cast(lateral_subquery.c.outline, Geography),
+            )
+            < distance,
+            # Don't join to any buildings already joined
+            ~exists().where(
+                address_point_building_association.c.building_id
+                == lateral_subquery.c.building_id
+            ),
+        )
+    )
+
+    return select_query
+
+
+def insert_address_building_association(session: Session, select_query: Select):
+    insert_query = (
+        insert(address_point_building_association)
+        .from_select(["address_point_id", "building_id"], select_query)
+        .on_conflict_do_nothing()
+    )
+    session.execute(insert_query)
 
 
 def get_or_create_method_id(session: Session, method_name: str) -> uuid.UUID:
@@ -168,7 +358,7 @@ def build_floor_measure_query(
     cadastre: TableClause = None,
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
-    query = select(
+    select_query = select(
         func.gen_random_uuid().label("id"),
         literal(storey).label("storey"),
         floor_measure_table.c[ffh_field].label("height"),
@@ -182,8 +372,8 @@ def build_floor_measure_query(
 
     if join_by == "gnaf_id":
         # Join by GNAF ID matching
-        query = (
-            query.select_from(Building)
+        select_query = (
+            select_query.select_from(Building)
             .join(AddressPoint, Building.address_points)
             .join(
                 floor_measure_table,
