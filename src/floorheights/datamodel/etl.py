@@ -1,4 +1,3 @@
-import click
 import csv
 import geopandas as gpd
 import numpy as np
@@ -293,7 +292,6 @@ def get_or_create_method_id(session: Session, method_name: str) -> uuid.UUID:
     """Retrieve the ID for a given method, creating it if it doesn't exist"""
     method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
     if not method_id:
-        click.echo(f"Inserting '{method_name}' into method table...")
         method = Method(name=method_name)
         session.add(method)
         session.flush()
@@ -309,7 +307,6 @@ def get_or_create_dataset_id(
         select(Dataset.id).filter(Dataset.name == dataset_name)
     ).first()
     if not dataset_id:
-        click.echo(f"Inserting '{dataset_name}' into dataset table...")
         dataset = Dataset(
             name=dataset_name,
             description=dataset_desc,
