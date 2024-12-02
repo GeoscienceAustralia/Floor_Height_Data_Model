@@ -12,6 +12,10 @@ defineProps({
 <template>
   <div class="flex flex-col gap-1">
     <div class="flex flex-col gap-0">
+      <div class="subheading"> Dataset: </div>
+      <div> {{ floorMeasure?.datasets.toString() }} </div>
+    </div>
+    <div class="flex flex-col gap-0">
       <div class="subheading"> Method: </div>
       <div> {{ floorMeasure?.method }} </div>
     </div>
