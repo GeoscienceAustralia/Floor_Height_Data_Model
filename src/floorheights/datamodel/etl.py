@@ -53,6 +53,57 @@ def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
     return gdf
 
 
+def read_nexis_csv(input_nexis: str, crs: int = 4283) -> gpd.GeoDataFrame:
+    """Read NEXIS CSV file into GeoDataFrame
+
+    If the CSV's geodetic datum is GDA1994 (which is assumed by default), transform it
+    to GDA2020. Subsequently transform to WGS1984 for ingestion into PostgreSQL.
+    """
+    nexis_df = pd.read_csv(
+        input_nexis,
+        usecols=[
+            "LID",
+            "floor_height_(m)",
+            "flood_vulnerability_function_id",
+            "NEXIS_CONSTRUCTION_TYPE",
+            "NEXIS_YEAR_BUILT",
+            "NEXIS_WALL_TYPE",
+            "GENERIC_EXT_WALL",
+            "LOCAL_YEAR_BUILT",
+            "LATITUDE",
+            "LONGITUDE",
+        ],
+        dtype={
+            "LID": str,
+            "floor_height_(m)": float,
+            "flood_vulnerability_function_id": str,
+            "NEXIS_CONSTRUCTION_TYPE": str,
+            "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
+            "NEXIS_WALL_TYPE": str,
+            "GENERIC_EXT_WALL": str,
+            "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
+            "LATITUDE": float,
+            "LONGITUDE": float,
+        },
+    )
+
+    # Make NEXIS input column names lower case and remove special characters
+    nexis_df.columns = nexis_df.columns.str.lower().str.replace(r"\W+", "", regex=True)
+    # Remove "_GNAF" prefix
+    nexis_df.lid = nexis_df.lid.str.removeprefix("GNAF_")
+
+    nexis_gdf = gpd.GeoDataFrame(
+        nexis_df,
+        geometry=gpd.GeoSeries.from_xy(nexis_df.longitude, nexis_df.latitude, crs=crs),
+    )
+    nexis_gdf = nexis_gdf.drop(columns=["latitude", "longitude"])
+    if nexis_gdf.crs.geodetic_crs.equals(CRS.from_epsg(4283).geodetic_crs):
+        nexis_gdf = nexis_gdf.to_crs(7844)
+    nexis_gdf = nexis_gdf.to_crs(4326)
+
+    return nexis_gdf
+
+
 def psql_insert_copy(
     table: pd.io.sql.SQLTable,
     conn: Engine | Connection,

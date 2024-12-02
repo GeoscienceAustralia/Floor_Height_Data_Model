@@ -261,58 +261,37 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
 @click.command()
 @click.option("-i", "--input-nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")  # fmt: skip
-def ingest_nexis_method(input_nexis):
+@click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
+def ingest_nexis_method(input_nexis, input_cadastre):
     """Ingest NEXIS floor height method"""
     click.echo("Loading NEXIS points...")
     try:
-        nexis_df = pd.read_csv(
-            input_nexis,
-            usecols=[
-                "LID",
-                "floor_height_(m)",
-                "flood_vulnerability_function_id",
-                "NEXIS_CONSTRUCTION_TYPE",
-                "NEXIS_YEAR_BUILT",
-                "NEXIS_WALL_TYPE",
-                "GENERIC_EXT_WALL",
-                "LOCAL_YEAR_BUILT",
-            ],
-            dtype={
-                "LID": str,
-                "floor_height_(m)": float,
-                "flood_vulnerability_function_id": str,
-                "NEXIS_CONSTRUCTION_TYPE": str,
-                "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
-                "NEXIS_WALL_TYPE": str,
-                "GENERIC_EXT_WALL": str,
-                "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
-            },
-        )
+        nexis_gdf = etl.read_nexis_csv(input_nexis, 4283)
     except Exception as error:
         raise click.exceptions.FileError(input_nexis.name, error)
-
-    # Make NEXIS input column names lower case and remove special characters
-    nexis_df.columns = nexis_df.columns.str.lower().str.replace(r"\W+", "", regex=True)
-    # Drop rows that aren't a GNAF address
-    nexis_df = nexis_df[nexis_df["lid"].str.startswith("GNAF")]
-    nexis_df["lid"] = nexis_df["lid"].str[5:]  # Remove "GNAF_" prefix
 
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         Base = declarative_base()
-        # Select gnaf_ids in the database
-        gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
-        gnaf_ids = [row[0] for row in gnaf_ids]
 
-        # Subset NEXIS data based on selection
-        nexis_df = nexis_df[nexis_df["lid"].isin(gnaf_ids)]
+        if input_cadastre:
+            try:
+                cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+            except Exception as error:
+                raise click.exceptions.FileError(Path(input_cadastre).name, error)
+            # Clip NEXIS points to cadastre extent
+            nexis_gdf = gpd.clip(nexis_gdf, cadastre_gdf)
+        else:
+            # Subset NEXIS points based GNAF IDs in the database
+            gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
+            gnaf_ids = [row[0] for row in gnaf_ids]
+            nexis_gdf = nexis_gdf[nexis_gdf["lid"].isin(gnaf_ids)]
 
         click.echo("Copying NEXIS points to PostgreSQL...")
-        nexis_df.to_sql(
+        nexis_gdf.to_postgis(
             "temp_nexis",
             conn,
-            method=etl.psql_insert_copy,
             if_exists="replace",
             dtype={
                 "floor_height_m": Numeric  # Set numeric so we don't need to type cast in the db
@@ -320,20 +299,53 @@ def ingest_nexis_method(input_nexis):
         )
         temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=conn)
 
-        # Build select query that will be inserted into the floor_measure table
-        modelled_query = etl.build_floor_measure_query(
+        # Build select query to insert into the floor_measure table for GNAF ID matches
+        method_id = etl.get_or_create_method_id(session, "Inverse transform sampling")
+        modelled_query_gnaf = etl.build_floor_measure_query(
             temp_nexis,
             "floor_height_m",
-            etl.get_or_create_method_id(session, "Inverse transform sampling"),
+            method_id,
             50,
             0,
             join_by="gnaf_id",
             gnaf_id_col="lid",
         )
 
-        click.echo("Inserting records into floor_measure table...")
-        # Insert into the floor_measure table and get the ids of records inserted
-        modelled_inserted_ids = etl.insert_floor_measure(session, modelled_query)
+        click.echo("Inserting GNAF records into floor_measure table...")
+        modelled_inserted_ids = etl.insert_floor_measure(session, modelled_query_gnaf)
+
+        if input_cadastre:
+            click.echo("Copying cadastre to PostgreSQL...")
+            cadastre_gdf.to_postgis(
+                "temp_cadastre",
+                conn,
+                schema="public",
+                if_exists="replace",
+                index=True,
+                index_label="id",
+            )
+            temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+            # Build select query to insert into the floor_measure table for non GNAF addresses
+            modelled_query_cadastre = etl.build_floor_measure_query(
+                temp_nexis,
+                "floor_height_m",
+                method_id,
+                50,
+                0,
+                join_by="cadastre",
+                cadastre=temp_cadastre,
+            )
+            # Modify the cadastre query to only select non-GNAF addresses
+            modelled_query_cadastre = modelled_query_cadastre.where(
+                temp_nexis.c.lid.notlike("GA%")
+            )
+
+            click.echo("Inserting non-GNAF records into floor_measure table...")
+            modelled_inserted_ids_cadastre = etl.insert_floor_measure(
+                session, modelled_query_cadastre
+            )
+            modelled_inserted_ids += modelled_inserted_ids_cadastre
 
         if modelled_inserted_ids:
             nexis_dataset_id = etl.get_or_create_dataset_id(
@@ -344,6 +356,8 @@ def ingest_nexis_method(input_nexis):
             )
 
         temp_nexis.drop(conn)
+        if input_cadastre:
+            temp_cadastre.drop(conn)
 
         click.echo("NEXIS ingestion complete")
 
