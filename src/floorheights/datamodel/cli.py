@@ -26,9 +26,9 @@ def create_dummy_address_point():
     """Create dummy address point"""
     session = SessionLocal()
     address = AddressPoint(
-        gnaf_id='GANSW717206574',
-        address='2 BENTLEY PLACE, WAGGA WAGGA, NSW 2650',
-        location='SRID=4326;POINT(147.377214 -35.114780)'
+        gnaf_id="GANSW717206574",
+        address="2 BENTLEY PLACE, WAGGA WAGGA, NSW 2650",
+        location="SRID=4326;POINT(147.377214 -35.114780)",
     )
     session.add(address)
     session.commit()
@@ -42,13 +42,13 @@ def create_dummy_building():
     session = SessionLocal()
     building = Building(
         outline=(
-            'SRID=4326;'
-            'POLYGON ((147.37761655448156 -35.11448724509989, 147.37778526244756 -35.11466902926723,'
-            '147.37788066971024 -35.11463666981137, 147.37775733837083 -35.11443775405107, '
-            '147.37761655448156 -35.11448724509989))'
+            "SRID=4326;"
+            "POLYGON ((147.37761655448156 -35.11448724509989, 147.37778526244756 -35.11466902926723,"
+            "147.37788066971024 -35.11463666981137, 147.37775733837083 -35.11443775405107, "
+            "147.37761655448156 -35.11448724509989))"
         ),
         min_height_ahd=179.907,
-        max_height_ahd=180.155
+        max_height_ahd=180.155,
     )
     session.add(building)
     session.commit()
@@ -57,8 +57,8 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--input-address", "input_address", required=True, type=str, help="Input address points (Geodatabase) file path.")
-@click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
+@click.option("-i", "--input-address", required=True, type=str, help="Input address points (Geodatabase) file path.")  # fmt: skip
+@click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 def ingest_address_points(input_address, chunksize):
     """Ingest address points"""
     click.echo("Loading Geodatabase...")
@@ -99,35 +99,44 @@ def ingest_address_points(input_address, chunksize):
 
 
 @click.command()
-@click.option("-i", "--input-buildings", "input_buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")
-@click.option("-d", "--input-dem", "dem_file", required=True, type=click.File(), help="Input DEM file path.")
-@click.option("-c", "--chunksize", "chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")
-@click.option("--remove-small", "remove_small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")
-@click.option("--remove-overlapping", "remove_overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")
-def ingest_buildings(input_buildings, dem_file, chunksize, remove_small, remove_overlapping):
+@click.option("-i", "--input-buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")  # fmt: skip
+@click.option("-d", "--input-dem", required=True, type=click.File(), help="Input DEM file path.")  # fmt: skip
+@click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
+@click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
+@click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
+def ingest_buildings(
+    input_buildings, input_dem, chunksize, remove_small, remove_overlapping
+):
     """Ingest building footprints"""
     click.echo("Loading DEM...")
     try:
-        dem = rasterio.open(dem_file.name)
+        dem = rasterio.open(input_dem.name)
         dem_crs = dem.crs
     except Exception as error:
-        raise click.exceptions.FileError(dem_file.name, error)
+        raise click.exceptions.FileError(input_dem.name, error)
 
     click.echo("Creating mask...")
     bounds = dem.bounds
     mask_geom = box(*bounds)
-    mask_df = gpd.GeoDataFrame({"id": 1, "geometry": [mask_geom]}, crs=dem_crs.to_string())
-    mask_df = mask_df.to_crs(4326)  # Transform mask to WGS84 - might be slightly offset buildings are in GDA94/GDA2020
+    mask_df = gpd.GeoDataFrame(
+        {"id": 1, "geometry": [mask_geom]}, crs=dem_crs.to_string()
+    )
+    # Transform mask to WGS84 - might be slightly offset buildings are in GDA94/GDA2020
+    mask_df = mask_df.to_crs(4326)
     mask_bbox = mask_df.total_bounds
 
     click.echo("Loading building GeoParquet...")
     try:
-        buildings = gpd.read_parquet(input_buildings.name, columns=["geometry"], bbox=mask_bbox)
+        buildings = gpd.read_parquet(
+            input_buildings.name, columns=["geometry"], bbox=mask_bbox
+        )
     except Exception as error:
         raise click.exceptions.FileError(input_buildings.name, error)
 
     buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
-    buildings = buildings.to_crs(dem_crs.to_epsg())  # Transform buildings to CRS of our DEM
+    buildings = buildings.to_crs(
+        dem_crs.to_epsg()
+    )  # Transform buildings to CRS of our DEM
 
     if remove_small:
         click.echo(f"Removing buildings < {remove_small} m^2...")
@@ -172,13 +181,15 @@ def ingest_buildings(input_buildings, dem_file, chunksize, remove_small, remove_
 
 
 @click.command()
-@click.option("-c", "--input-cadastre", "input_cadastre", required=False, type=str, help="Input cadastre vector file path to support address joining.")
-@click.option("--flatten-cadastre", "flatten_cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")
-@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join addresses to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")
+@click.option("-c", "--input-cadastre", type=str, help="Input cadastre vector file path to support address joining.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join addresses to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
     """Join address points to building outlines"""
     if join_largest and not input_cadastre:
-        raise click.UsageError("--join-largest-building must be used with --input-cadastre")
+        raise click.UsageError(
+            "--join-largest-building must be used with --input-cadastre"
+        )
     if flatten_cadastre and not input_cadastre:
         raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
 
@@ -191,7 +202,8 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
         # for addresses geocoded to building centroids
         select_query = (
             select(
-                AddressPoint.id.label("address_point_id"), Building.id.label("building_id")
+                AddressPoint.id.label("address_point_id"),
+                Building.id.label("building_id"),
             )
             .join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
             .where(AddressPoint.geocode_type == "BUILDING CENTROID")
@@ -231,8 +243,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 click.echo("Joining with largest building on lot...")
                 # Join to largest building on the cadastral lot for distinct address
                 select_query = select_query.order_by(
-                    AddressPoint.id,
-                    func.ST_Area(Building.outline).desc()
+                    AddressPoint.id, func.ST_Area(Building.outline).desc()
                 ).distinct(AddressPoint.id)
 
             etl.insert_address_building_association(session, select_query)
@@ -249,7 +260,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
 
 @click.command()
-@click.option("-i", "--input-nexis", "input_nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")
+@click.option("-i", "--input-nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")  # fmt: skip
 def ingest_nexis_method(input_nexis):
     """Ingest NEXIS floor height method"""
     click.echo("Loading NEXIS points...")
@@ -338,13 +349,13 @@ def ingest_nexis_method(input_nexis):
 
 
 @click.command()
-@click.option("-i", "--input-data", "input_data", required=True, type=str, help="Input validation OGR dataset file path.")
-@click.option("-c", "--input-cadastre", "input_cadastre", required=True, type=str, help="Input cadastre OGR dataset file path to support address joining.")
-@click.option("--ffh-field", "ffh_field", type=str, required=True, help="Name of the first floor height field.")
-@click.option("--step-size", "step_size", type=float, required=False, default=0.28, show_default=True, help="Step size value in metres.")
-@click.option("--dataset-name", "dataset_name", type=str, required=False, help="Dataset name.")
-@click.option("--dataset-desc", "dataset_desc", type=str, required=False, help="Dataset description.")
-@click.option("--dataset-src", "dataset_src", type=str, required=False, help="Dataset source.")
+@click.option("-i", "--input-data", required=True, type=str, help="Input validation OGR dataset file path.")  # fmt: skip
+@click.option("-c", "--input-cadastre", required=True, type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
+@click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
+@click.option("--step-size", type=float, default=0.28, show_default=True, help="Step size value in metres.")  # fmt: skip
+@click.option("--dataset-name", type=str, help="Dataset name.")
+@click.option("--dataset-desc", type=str, help="Dataset description.")
+@click.option("--dataset-src", type=str, help="Dataset source.")
 def ingest_validation_method(
     input_data,
     input_cadastre,
@@ -365,9 +376,10 @@ def ingest_validation_method(
     except Exception as error:
         raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
-
     if ffh_field not in method_df.columns:
-        raise click.exceptions.BadParameter(f"Field '{ffh_field}' not found in input file")
+        raise click.exceptions.BadParameter(
+            f"Field '{ffh_field}' not found in input file"
+        )
 
     method_df = method_df.rename(columns={ffh_field: "floor_height_m"})
     # Make method input column names lower case and remove special characters
@@ -387,7 +399,7 @@ def ingest_validation_method(
             if_exists="replace",
             index=True,
             index_label="id",
-            dtype={"floor_height_m": Numeric},  # Set numeric so we don't need to type cast in the db
+            dtype={"floor_height_m": Numeric},
         )
         click.echo("Copying cadastre to PostgreSQL...")
         cadastre_df.to_postgis(
@@ -462,7 +474,7 @@ cli.add_command(ingest_nexis_method)
 cli.add_command(ingest_validation_method)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()
 
 

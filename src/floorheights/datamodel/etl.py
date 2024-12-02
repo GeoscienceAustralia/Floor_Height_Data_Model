@@ -22,7 +22,7 @@ from sqlalchemy import (
     exists,
     text,
     literal,
-    func
+    func,
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
@@ -89,7 +89,9 @@ def psql_insert_copy(
         cur.copy_expert(sql=sql, file=s_buf)
 
 
-def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.GeoDataFrame) -> tuple:
+def sample_dem_with_buildings(
+    dem: rasterio.io.DatasetReader, buildings: gpd.GeoDataFrame
+) -> tuple:
     """Sample minimum and maximum elevation values from a DEM for each building geometry"""
     min_heights = []
     max_heights = []
@@ -97,7 +99,9 @@ def sample_dem_with_buildings(dem: rasterio.io.DatasetReader, buildings: gpd.Geo
     for geom in buildings.geometry:
         # Mask the raster with the buildings, setting out of bounds pixels to NaN
         try:
-            out_img, out_transform = mask(dem, [geom], crop=True, all_touched=True, nodata=np.nan)
+            out_img, out_transform = mask(
+                dem, [geom], crop=True, all_touched=True, nodata=np.nan
+            )
             # Calculate min and max heights, ignoring NaN values
             min_height = np.nanmin(out_img)
             max_height = np.nanmax(out_img)
@@ -137,16 +141,14 @@ def remove_overlapping_geoms(session: Session, overlap_threshold: float) -> Resu
     select_query = (
         select(
             lateral_subquery.c.id,
-        )
-        .select_from(smaller)
-        .join(lateral_subquery, literal(True))  # Join on True to make it a cross lateral join
+        ).select_from(smaller)
+        # Join on True to make it a cross lateral join
+        .join(lateral_subquery, literal(True))
         # Calculate the ratio of the intersection
         .where(
             (
                 func.ST_Area(
-                    func.ST_Intersection(
-                        smaller.outline, lateral_subquery.c.outline
-                    )
+                    func.ST_Intersection(smaller.outline, lateral_subquery.c.outline)
                 )
                 / func.ST_Area(smaller.outline)
             )
@@ -190,9 +192,7 @@ def flatten_cadastre_geoms(
     )
     flat_temp_cadastre.create(conn)
 
-    insert_query = insert(temp_cadastre).from_select(
-        ["geometry"], select_query
-    )
+    insert_query = insert(temp_cadastre).from_select(["geometry"], select_query)
     session.execute(insert_query)
 
     temp_cadastre.drop(conn)  # Drop the original temp_cadastre table
@@ -280,6 +280,8 @@ def build_knn_address_match_query(cadastre: Table, distance: int) -> Select:
 
 
 def insert_address_building_association(session: Session, select_query: Select):
+    """Insert records into the address_poing_building_association table from a select
+    query"""
     insert_query = (
         insert(address_point_building_association)
         .from_select(["address_point_id", "building_id"], select_query)
@@ -290,7 +292,9 @@ def insert_address_building_association(session: Session, select_query: Select):
 
 def get_or_create_method_id(session: Session, method_name: str) -> uuid.UUID:
     """Retrieve the ID for a given method, creating it if it doesn't exist"""
-    method_id = session.execute(select(Method.id).filter(Method.name == method_name)).first()
+    method_id = session.execute(
+        select(Method.id).filter(Method.name == method_name)
+    ).first()
     if not method_id:
         method = Method(name=method_name)
         session.add(method)
@@ -308,9 +312,7 @@ def get_or_create_dataset_id(
     ).first()
     if not dataset_id:
         dataset = Dataset(
-            name=dataset_name,
-            description=dataset_desc,
-            source=dataset_src
+            name=dataset_name, description=dataset_desc, source=dataset_src
         )
         session.add(dataset)
         session.flush()
@@ -418,7 +420,9 @@ def build_floor_measure_query(
 
     if step_counting is True and step_size:
         # Select floor heights divisible by step_size
-        select_query = select_query.filter(func.mod(floor_measure_table.c[ffh_field], step_size) == 0)
+        select_query = select_query.filter(
+            func.mod(floor_measure_table.c[ffh_field], step_size) == 0
+        )
     elif step_counting is False and step_size:
         # Select floor_heights not divisible by step_size
         # This retrieves the remaining floor heights for inserting into a different method
@@ -435,7 +439,15 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
     ids = session.execute(
         insert(FloorMeasure)
         .from_select(
-            ["id", "storey", "height", "accuracy_measure", "building_id", "method_id", "aux_info"],
+            [
+                "id",
+                "storey",
+                "height",
+                "accuracy_measure",
+                "building_id",
+                "method_id",
+                "aux_info",
+            ],
             select_query,
         )
         .returning(FloorMeasure.id)
@@ -455,6 +467,5 @@ def insert_floor_measure_dataset_association(
         for row in floor_measure_inserted_ids
     ]
     session.execute(
-        insert(floor_measure_dataset_association)
-        .values(floor_measure_dataset_values)
+        insert(floor_measure_dataset_association).values(floor_measure_dataset_values)
     )
