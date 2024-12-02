@@ -1,19 +1,21 @@
 # GA Floor Height Data Model
+
 Data model for the GA floor height project. Includes;
+
 - Model definition
-    - Shown in figure below
-    - Defined using ORM (SQLAlchemy)
+  - Shown in figure below
+  - Defined using ORM (SQLAlchemy)
 - Migrations and tools for generating migrations based on data model changes
 - Command line tool to support working with the data model
 - Docker files to provide environment for CLI application and database
 
-![Floor Heights dataa model schema diagram](./docs/floorheights_schema.png)
-
+![Floor Heights data model schema diagram](./docs/floorheights_schema.png)
 
 ## Getting started
+
 Create the `.env` file, this includes all the environment variables used by the application. The default values in this example file should be changed (password at least).
 
-    cp .env .env.example
+    cp .env.example .env
 
 Build the docker images
 
@@ -32,13 +34,14 @@ Some dummy data can then be added using the following commands (for test purpose
     docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-address-point
     docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-building
 
-
 ## Using as a library
+
 The data model can be installed as used as a library. The following steps show one possible way to do this.
 
 The database host must be running, and have floor heights data inserted.
 
 Ensure the following environment variables are set. This can be done using environment variables, or a .env file
+
 - POSTGRES_USER - user with access to database
 - POSTGRES_PASSWORD - password for user
 - POSTGRES_DB - name of the database
@@ -70,8 +73,8 @@ Run the script. This will list up to 10 address points that have been added to t
 
     python simple_select.py
 
-
 ## Changing data model schema
+
 Alembic is used to automatically generate database migrations scripts from changes
 to the SQLAlchemy model definitions. The steps required to modify the schema are as
 follows.
@@ -93,8 +96,8 @@ migrations.
 
     docker compose run app alembic upgrade head
 
-
 ### Reverting schema changes
+
 Say a bad migration was generated and applied to the database. The last migration can be
 reverted by running
 
@@ -103,6 +106,4 @@ reverted by running
 The bad migration file should then be deleted from the ['versions'](./src/alembic/versions/)
 folder.
 
-[Alembic provides many options for dealing with these issues](https://alembic.sqlalchemy.org/). 
-
-
+[Alembic provides many options for dealing with these issues](https://alembic.sqlalchemy.org/).
