@@ -200,7 +200,9 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
         Base = declarative_base()
         click.echo("Performing join by contains...")
         # Selects address-building matches for addresses geocoded to building centroids
-        select_query = etl.build_address_match_query(cadastre=False, join_by="intersects")
+        select_query = etl.build_address_match_query(
+            cadastre=False, join_by="intersects"
+        )
         etl.insert_address_building_association(session, select_query)
 
         if input_cadastre:
@@ -286,9 +288,9 @@ def ingest_nexis_method(input_nexis, flatten_cadastre, join_largest, input_cadas
             gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
             gnaf_ids = [row[0] for row in gnaf_ids]
             nexis_gdf = nexis_gdf[nexis_gdf["lid"].isin(gnaf_ids)]
-        
-        nexis_gdf['id'] = [uuid.uuid4() for _ in range(len(nexis_gdf.index))]
-        nexis_gdf = nexis_gdf.set_index(['id'])
+
+        nexis_gdf["id"] = [uuid.uuid4() for _ in range(len(nexis_gdf.index))]
+        nexis_gdf = nexis_gdf.set_index(["id"])
 
         click.echo("Copying NEXIS points to PostgreSQL...")
         nexis_gdf.to_postgis(
@@ -330,7 +332,9 @@ def ingest_nexis_method(input_nexis, flatten_cadastre, join_largest, input_cadas
 
             if flatten_cadastre:
                 click.echo("Flattening cadastre geometries...")
-                temp_cadastre = etl.flatten_cadastre_geoms(session, conn, Base, temp_cadastre)
+                temp_cadastre = etl.flatten_cadastre_geoms(
+                    session, conn, Base, temp_cadastre
+                )
 
             click.echo("Inserting non-GNAF records into floor_measure table...")
             # Build select queries to insert into the floor_measure table for non GNAF addresses
@@ -363,7 +367,7 @@ def ingest_nexis_method(input_nexis, flatten_cadastre, join_largest, input_cadas
 
             if join_largest:
                 click.echo("Joining with largest building on lot...")
-                # Modify select to join to largest building on the lot for distinct address
+                # Modify select to join to largest building on the lot for distinct points
                 modelled_query_cadastre = modelled_query_cadastre.order_by(
                     temp_nexis.c.id, func.ST_Area(Building.outline).desc()
                 ).distinct(temp_nexis.c.id)
@@ -448,8 +452,8 @@ def ingest_validation_method(
     method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True
     )
-    method_gdf['id'] = [uuid.uuid4() for _ in range(len(method_gdf.index))]
-    method_gdf = method_gdf.set_index(['id'])
+    method_gdf["id"] = [uuid.uuid4() for _ in range(len(method_gdf.index))]
+    method_gdf = method_gdf.set_index(["id"])
 
     session = SessionLocal()
     with session.begin():
@@ -480,7 +484,9 @@ def ingest_validation_method(
 
         if flatten_cadastre:
             click.echo("Flattening cadastre geometries...")
-            temp_cadastre = etl.flatten_cadastre_geoms(session, conn, Base, temp_cadastre)
+            temp_cadastre = etl.flatten_cadastre_geoms(
+                session, conn, Base, temp_cadastre
+            )
 
         step_count_id = etl.get_or_create_method_id(session, "Step counting")
         survey_id = etl.get_or_create_method_id(session, "Surveyed")
@@ -544,7 +550,7 @@ def ingest_validation_method(
 
         if join_largest:
             click.echo("Joining with largest building on lot...")
-            # Modify select to join to largest building on the lot for distinct address
+            # Modify select to join to largest building on the lot for distinct points
             step_count_query_cadastre_knn = step_count_query_cadastre_knn.order_by(
                 temp_method.c.id, func.ST_Area(Building.outline).desc()
             ).distinct(temp_method.c.id)
@@ -570,6 +576,7 @@ def ingest_validation_method(
             step_size=step_size,
             cadastre=temp_cadastre,
         )
+        step_count_knn_ids = etl.insert_floor_measure(session, step_count_query_knn)
         step_count_query_knn = etl.build_floor_measure_query(
             temp_method,
             "floor_height_m",
@@ -581,14 +588,7 @@ def ingest_validation_method(
             step_counting=False,
             step_size=step_size,
         )
-
-        # Insert into the floor_measure table and get the ids of records inserted
-        step_count_knn_ids = etl.insert_floor_measure(
-            session, step_count_query_knn
-        )
-        survey_knn_ids = etl.insert_floor_measure(
-            session, step_count_query_knn
-        )
+        survey_knn_ids = etl.insert_floor_measure(session, step_count_query_knn)
 
         validation_inserted_ids = (
             step_count_intersects_ids

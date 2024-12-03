@@ -513,7 +513,8 @@ def build_floor_measure_query(
     if join_by == "gnaf_id":
         # Join by GNAF ID matching
         select_query = (
-            select(*select_fields).select_from(Building)
+            select(*select_fields)
+            .select_from(Building)
             .join(AddressPoint, Building.address_points)
             .join(
                 floor_measure_table,
