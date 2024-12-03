@@ -206,12 +206,12 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
         if input_cadastre:
             click.echo("Loading cadastre...")
             try:
-                cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+                cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
             except Exception as error:
                 raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
             click.echo("Copying cadastre to PostgreSQL...")
-            cadastre_df.to_postgis(
+            cadastre_gdf.to_postgis(
                 "temp_cadastre",
                 conn,
                 schema="public",
@@ -243,15 +243,15 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
             # Finish up by joining addresses to nearest-neighbour buildings
             # that aren't within the cadastre and are within a distance threshold
-            select_query = etl.build_address_match_query("knn", cadastre)
+            select_query = etl.build_address_match_query("knn", temp_cadastre)
             etl.insert_address_building_association(session, select_query)
         else:
-            # If we don't use a cadastre, do a nearest-neighbour join 
+            # If we don't use a cadastre, do a nearest-neighbour join
             select_query = etl.build_address_match_query("knn")
             etl.insert_address_building_association(session, select_query)
 
         if input_cadastre:
-            cadastre.drop(conn)
+            temp_cadastre.drop(conn)
 
     click.echo("Joining complete")
 
@@ -434,7 +434,7 @@ def ingest_validation_method(
     except Exception as error:
         raise click.exceptions.FileError(Path(input_data).name, error)
     try:
-        cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+        cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
     except Exception as error:
         raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
@@ -465,7 +465,7 @@ def ingest_validation_method(
             dtype={"id": UUID, "floor_height_m": Numeric},
         )
         click.echo("Copying cadastre to PostgreSQL...")
-        cadastre_df.to_postgis(
+        cadastre_gdf.to_postgis(
             "temp_cadastre",
             conn,
             schema="public",
