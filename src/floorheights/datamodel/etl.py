@@ -243,7 +243,7 @@ def flatten_cadastre_geoms(
     )
     flat_temp_cadastre.create(conn)
 
-    insert_query = insert(temp_cadastre).from_select(["geometry"], select_query)
+    insert_query = insert(flat_temp_cadastre).from_select(["geometry"], select_query)
     session.execute(insert_query)
 
     temp_cadastre.drop(conn)  # Drop the original temp_cadastre table
