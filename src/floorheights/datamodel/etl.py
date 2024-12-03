@@ -305,7 +305,10 @@ def join_by_knn(
     cadastre_geom: Column = None,
     max_distance: int = 10,
 ) -> Select:
-    """Join by K-Nearest Neighbour helper function"""
+    """Join by K-Nearest Neighbour helper function
+
+    Source: https://postgis.net/workshops/postgis-intro/knn.html
+    """
     lateral_subquery = (
         select(
             *lateral_fields,
@@ -323,7 +326,7 @@ def join_by_knn(
     ).select_from(point_table)
 
     if cadastre_table is None:
-        # Nearest neighbour join for all addresses, so if we don't have a cadastre at all
+        # Nearest neighbour join for all addresses, if we don't have a cadastre
         select_query = select_query.join(lateral_subquery, literal(True)).where(
             func.ST_Distance(
                 func.cast(point_geom, Geography),
@@ -381,7 +384,6 @@ def build_address_match_query(
                 address_point_building_association.c.building_id == Building.id,
             ),
         )
-
     elif join_by == "knn":
         if cadastre is not None:
             cadastre_geom = cadastre.c.geometry
@@ -488,60 +490,69 @@ def build_floor_measure_query(
     method_id: uuid.UUID,
     accuracy_measure: float,
     storey: int,
-    join_by: Literal["gnaf_id", "cadastre"],
+    join_by: Literal["gnaf_id", "intersects", "cadastre", "knn"],
     gnaf_id_col: str = None,
     step_counting: bool = None,
     step_size: float = None,
     cadastre: Table = None,
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
-    select_query = select(
+    building_id = Building.id.label("building_id")
+    select_fields = [
         func.gen_random_uuid().label("id"),
         literal(storey).label("storey"),
         floor_measure_table.c[ffh_field].label("height"),
         literal(accuracy_measure).label("accuracy_measure"),
-        Building.id.label("building_id"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
             floor_measure_table, [ffh_field, "id", "geometry"]
         ).label("aux_info"),
-    )
+        building_id,
+    ]
 
     if join_by == "gnaf_id":
         # Join by GNAF ID matching
         select_query = (
-            select_query.select_from(Building)
+            select(*select_fields).select_from(Building)
             .join(AddressPoint, Building.address_points)
             .join(
                 floor_measure_table,
                 floor_measure_table.c[gnaf_id_col] == AddressPoint.gnaf_id,
             )
         )
+    elif join_by == "intersects":
+        select_query = join_by_contains(select_fields, floor_measure_table.c.geometry)
     elif join_by == "cadastre":
-        # Join floor_measure point to cadastre polygon by nearest neighbour
-        # https://postgis.net/workshops/postgis-intro/knn.html
-        lateral_subquery = (
-            select(
-                cadastre.c.id.label("id"),
-                cadastre.c.geometry.label("geometry"),
-                (floor_measure_table.c.geometry.op("<->")(cadastre.c.geometry)).label(
-                    "dist"
-                ),
+        select_query = join_by_cadastre(
+            select_fields,
+            floor_measure_table,
+            floor_measure_table.c.geometry,
+            cadastre,
+            cadastre.c.geometry,
+        ).where(
+            ~exists().where(
+                FloorMeasure.building_id == building_id,
             )
-            .order_by("dist")
-            .limit(1)
-            .lateral()
         )
-        select_query = (
-            select_query.select_from(
-                # Join on True to make it a cross join
-                floor_measure_table.join(lateral_subquery, literal(True)).join(
-                    AddressPoint,
-                    func.ST_Within(AddressPoint.location, lateral_subquery.c.geometry),
-                )
-            )
-            .join(Building, AddressPoint.buildings)
-            .distinct(Building.id)
+    elif join_by == "knn":
+        if cadastre is not None:
+            cadastre_geom = cadastre.c.geometry
+        else:
+            cadastre_geom = None
+
+        # Remove building id from additional fields because we select it from the lateral subquery
+        select_fields.remove(building_id)
+
+        lateral_fields = [
+            Building.id.label("building_id"),
+        ]
+        select_query = join_by_knn(
+            lateral_fields,
+            floor_measure_table,
+            floor_measure_table.c.geometry,
+            additional_select_fields=select_fields,
+            cadastre_table=cadastre,
+            cadastre_geom=cadastre_geom,
         )
 
     if step_counting is True and step_size:
@@ -570,12 +581,13 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
                 "storey",
                 "height",
                 "accuracy_measure",
-                "building_id",
                 "method_id",
                 "aux_info",
+                "building_id",
             ],
             select_query,
         )
+        .on_conflict_do_nothing()
         .returning(FloorMeasure.id)
     )
     return ids.all()

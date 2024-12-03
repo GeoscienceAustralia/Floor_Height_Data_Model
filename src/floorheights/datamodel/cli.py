@@ -256,7 +256,8 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 @click.command()
 @click.option("-i", "--input-nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
-def ingest_nexis_method(input_nexis, input_cadastre):
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
+def ingest_nexis_method(input_nexis, join_largest,input_cadastre):
     """Ingest NEXIS floor height method"""
     click.echo("Loading NEXIS points...")
     try:
@@ -299,8 +300,8 @@ def ingest_nexis_method(input_nexis, input_cadastre):
             temp_nexis,
             "floor_height_m",
             method_id,
-            50,
-            0,
+            accuracy_measure=50,
+            storey=0,
             join_by="gnaf_id",
             gnaf_id_col="lid",
         )
@@ -320,26 +321,64 @@ def ingest_nexis_method(input_nexis, input_cadastre):
             )
             temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
-            # Build select query to insert into the floor_measure table for non GNAF addresses
+            click.echo("Inserting non-GNAF records into floor_measure table...")
+            # Build select queries to insert into the floor_measure table for non GNAF addresses
+            # First, by point-building intersection
+            modelled_query_intersect = etl.build_floor_measure_query(
+                temp_nexis,
+                "floor_height_m",
+                method_id,
+                accuracy_measure=50,
+                storey=0,
+                join_by="intersects",
+            ).where(
+                # Modify the query to select non-GNAF addresses
+                temp_nexis.c.lid.notlike("GA%")
+            )
+            modelled_query_intersect_ids = etl.insert_floor_measure(
+                session, modelled_query_intersect
+            )
+
+            # Second, by joining to buildings with a common cadastre lot
             modelled_query_cadastre = etl.build_floor_measure_query(
                 temp_nexis,
                 "floor_height_m",
                 method_id,
-                50,
-                0,
+                accuracy_measure=50,
+                storey=0,
                 join_by="cadastre",
                 cadastre=temp_cadastre,
-            )
-            # Modify the cadastre query to only select non-GNAF addresses
-            modelled_query_cadastre = modelled_query_cadastre.where(
-                temp_nexis.c.lid.notlike("GA%")
-            )
+            ).where(temp_nexis.c.lid.notlike("GA%"))
 
-            click.echo("Inserting non-GNAF records into floor_measure table...")
-            modelled_inserted_ids_cadastre = etl.insert_floor_measure(
+            if join_largest:
+                click.echo("Joining with largest building on lot...")
+                # Modify select to join to largest building on the lot for distinct address
+                modelled_query_cadastre = modelled_query_cadastre.order_by(
+                    temp_nexis.c.id, func.ST_Area(Building.outline).desc()
+                ).distinct(temp_nexis.c.id)
+            modelled_inserted_cadastre_ids = etl.insert_floor_measure(
                 session, modelled_query_cadastre
             )
-            modelled_inserted_ids += modelled_inserted_ids_cadastre
+
+            # Third, by nearest-neighbour outside the extents of the cadastre
+            modelled_query_cadastre_knn = etl.build_floor_measure_query(
+                temp_nexis,
+                "floor_height_m",
+                method_id,
+                accuracy_measure=50,
+                storey=0,
+                join_by="knn",
+                cadastre=temp_cadastre,
+            ).where(temp_nexis.c.lid.notlike("GA%"))
+            modelled_inserted_cadastre_knn_ids = etl.insert_floor_measure(
+                session, modelled_query_cadastre_knn
+            )
+
+            modelled_inserted_ids += (
+                modelled_query_intersect_ids
+                + modelled_inserted_cadastre_ids
+                + modelled_inserted_cadastre_knn_ids
+            )
 
         if modelled_inserted_ids:
             nexis_dataset_id = etl.get_or_create_dataset_id(
@@ -359,6 +398,7 @@ def ingest_nexis_method(input_nexis, input_cadastre):
 @click.command()
 @click.option("-i", "--input-data", required=True, type=str, help="Input validation OGR dataset file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=True, type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
 @click.option("--step-size", type=float, default=0.28, show_default=True, help="Step size value in metres.")  # fmt: skip
 @click.option("--dataset-name", type=str, help="Dataset name.")
@@ -367,6 +407,7 @@ def ingest_nexis_method(input_nexis, input_cadastre):
 def ingest_validation_method(
     input_data,
     input_cadastre,
+    join_largest,
     ffh_field,
     step_size,
     dataset_name,
@@ -426,35 +467,119 @@ def ingest_validation_method(
         step_count_id = etl.get_or_create_method_id(session, "Step counting")
         survey_id = etl.get_or_create_method_id(session, "Surveyed")
 
-        # Build select queries that will be inserted into the floor_measure table
-        step_count_query = etl.build_floor_measure_query(
+        click.echo("Inserting records into floor_measure table...")
+        # Build select queries that will be inserted into the floor_measure table,
+        # we do this for both surveyed and step counting methods
+        # First, by point-building intersection
+        step_count_query_intersects = etl.build_floor_measure_query(
             temp_method,
             "floor_height_m",
             step_count_id,
-            60,
-            0,
+            accuracy_measure=60,
+            storey=0,
+            join_by="intersects",
+            step_counting=True,
+            step_size=step_size,
+            cadastre=temp_cadastre,
+        )
+        step_count_intersects_ids = etl.insert_floor_measure(
+            session, step_count_query_intersects
+        )
+        survey_query_intersects = etl.build_floor_measure_query(
+            temp_method,
+            "floor_height_m",
+            survey_id,
+            accuracy_measure=90,
+            storey=0,
+            join_by="intersects",
+            step_counting=False,
+            step_size=step_size,
+            cadastre=temp_cadastre,
+        )
+        survey_intersects_ids = etl.insert_floor_measure(
+            session, survey_query_intersects
+        )
+
+        # Second, by joining to buildings with a common cadastre lot
+        step_count_query_cadastre_knn = etl.build_floor_measure_query(
+            temp_method,
+            "floor_height_m",
+            step_count_id,
+            accuracy_measure=60,
+            storey=0,
             join_by="cadastre",
             step_counting=True,
             step_size=step_size,
             cadastre=temp_cadastre,
         )
-        survey_query = etl.build_floor_measure_query(
+        survey_query_cadastre_knn = etl.build_floor_measure_query(
             temp_method,
             "floor_height_m",
             survey_id,
-            90,
-            0,
+            accuracy_measure=90,
+            storey=0,
             join_by="cadastre",
             step_counting=False,
             step_size=step_size,
             cadastre=temp_cadastre,
         )
 
-        click.echo("Inserting records into floor_measure table...")
+        if join_largest:
+            click.echo("Joining with largest building on lot...")
+            # Modify select to join to largest building on the lot for distinct address
+            step_count_query_cadastre_knn = step_count_query_cadastre_knn.order_by(
+                temp_method.c.id, func.ST_Area(Building.outline).desc()
+            ).distinct(temp_method.c.id)
+            survey_query_cadastre_knn = survey_query_cadastre_knn.order_by(
+                temp_method.c.id, func.ST_Area(Building.outline).desc()
+            ).distinct(temp_method.c.id)
+        step_count_cadastre_knn_ids = etl.insert_floor_measure(
+            session, step_count_query_cadastre_knn
+        )
+        survey_cadastre_knn_ids = etl.insert_floor_measure(
+            session, survey_query_cadastre_knn
+        )
+
+        # Third, by nearest-neighbour outside the extents of the cadastre
+        step_count_query_knn = etl.build_floor_measure_query(
+            temp_method,
+            "floor_height_m",
+            step_count_id,
+            accuracy_measure=60,
+            storey=0,
+            join_by="knn",
+            step_counting=True,
+            step_size=step_size,
+            cadastre=temp_cadastre,
+        )
+        step_count_query_knn = etl.build_floor_measure_query(
+            temp_method,
+            "floor_height_m",
+            survey_id,
+            accuracy_measure=60,
+            storey=0,
+            join_by="knn",
+            cadastre=temp_cadastre,
+            step_counting=False,
+            step_size=step_size,
+        )
+
         # Insert into the floor_measure table and get the ids of records inserted
-        step_count_ids = etl.insert_floor_measure(session, step_count_query)
-        survey_ids = etl.insert_floor_measure(session, survey_query)
-        validation_inserted_ids = step_count_ids + survey_ids
+        step_count_knn_ids = etl.insert_floor_measure(
+            session, step_count_query_knn
+        )
+        survey_knn_ids = etl.insert_floor_measure(
+            session, step_count_query_knn
+        )
+
+        validation_inserted_ids = (
+            step_count_intersects_ids
+            + survey_intersects_ids
+            + step_count_cadastre_knn_ids
+            + survey_cadastre_knn_ids
+            + step_count_knn_ids
+            + survey_knn_ids
+        )
 
         if validation_inserted_ids:
             if not dataset_name:
