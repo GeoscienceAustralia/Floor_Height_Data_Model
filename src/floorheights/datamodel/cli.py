@@ -265,6 +265,13 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_method(input_nexis, flatten_cadastre, join_largest, input_cadastre):
     """Ingest NEXIS floor height method"""
+    if join_largest and not input_cadastre:
+        raise click.UsageError(
+            "--join-largest-building must be used with --input-cadastre"
+        )
+    if flatten_cadastre and not input_cadastre:
+        raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
+
     click.echo("Loading NEXIS points...")
     try:
         nexis_gdf = etl.read_nexis_csv(input_nexis, 4283)
@@ -432,7 +439,14 @@ def ingest_validation_method(
     dataset_src,
 ):
     """Ingest validation floor height method"""
-    # Read datasets into GeoDataFrames
+    if join_largest and not input_cadastre:
+        raise click.UsageError(
+            "--join-largest-building must be used with --input-cadastre"
+        )
+    if flatten_cadastre and not input_cadastre:
+        raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
+
+    click.echo("Loading validation points...")
     try:
         method_gdf = etl.read_ogr_file(input_data)
     except Exception as error:
