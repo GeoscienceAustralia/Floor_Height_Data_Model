@@ -248,7 +248,7 @@ def flatten_cadastre_geoms(
 
     temp_cadastre.drop(conn)  # Drop the original temp_cadastre table
     # Rename the flat_temp_cadastre table
-    session.execute(text("ALTER TABLE flat_temp_cadastre RENAME temp_cadastre"))
+    session.execute(text("ALTER TABLE flat_temp_cadastre RENAME TO temp_cadastre"))
 
     # Return flat cadastre metadata for subsequent joining
     return Table("temp_cadastre", Base.metadata, autoload_with=conn)
