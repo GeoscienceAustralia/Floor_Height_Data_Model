@@ -499,7 +499,7 @@ def build_floor_measure_query(
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
     building_id = Building.id.label("building_id")
     select_fields = [
-        func.gen_random_uuid().label("id"),
+        floor_measure_table.c.id.label("id"),
         literal(storey).label("storey"),
         floor_measure_table.c[ffh_field].label("height"),
         literal(accuracy_measure).label("accuracy_measure"),

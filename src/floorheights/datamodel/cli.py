@@ -2,9 +2,10 @@ import click
 import geopandas as gpd
 import pandas as pd
 import rasterio
+import uuid
 from pathlib import Path
 from shapely.geometry import box
-from sqlalchemy import Table, Numeric, select
+from sqlalchemy import Table, Numeric, UUID, select
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -282,15 +283,18 @@ def ingest_nexis_method(input_nexis, join_largest,input_cadastre):
             gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
             gnaf_ids = [row[0] for row in gnaf_ids]
             nexis_gdf = nexis_gdf[nexis_gdf["lid"].isin(gnaf_ids)]
+        
+        nexis_gdf['id'] = [uuid.uuid4() for _ in range(len(nexis_gdf.index))]
+        nexis_gdf = nexis_gdf.set_index(['id'])
 
         click.echo("Copying NEXIS points to PostgreSQL...")
         nexis_gdf.to_postgis(
             "temp_nexis",
             conn,
+            schema="public",
             if_exists="replace",
-            dtype={
-                "floor_height_m": Numeric  # Set numeric so we don't need to type cast in the db
-            },
+            index=True,
+            dtype={"id": UUID, "floor_height_m": Numeric},
         )
         temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=conn)
 
@@ -417,7 +421,7 @@ def ingest_validation_method(
     """Ingest validation floor height method"""
     # Read datasets into GeoDataFrames
     try:
-        method_df = etl.read_ogr_file(input_data)
+        method_gdf = etl.read_ogr_file(input_data)
     except Exception as error:
         raise click.exceptions.FileError(Path(input_data).name, error)
     try:
@@ -425,30 +429,31 @@ def ingest_validation_method(
     except Exception as error:
         raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
-    if ffh_field not in method_df.columns:
+    if ffh_field not in method_gdf.columns:
         raise click.exceptions.BadParameter(
             f"Field '{ffh_field}' not found in input file"
         )
 
-    method_df = method_df.rename(columns={ffh_field: "floor_height_m"})
+    method_gdf = method_gdf.rename(columns={ffh_field: "floor_height_m"})
     # Make method input column names lower case and remove special characters
-    method_df.columns = method_df.columns.str.lower().str.replace(
+    method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True
     )
+    method_gdf['id'] = [uuid.uuid4() for _ in range(len(method_gdf.index))]
+    method_gdf = method_gdf.set_index(['id'])
 
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         Base = declarative_base()
         click.echo("Copying validation table to PostgreSQL...")
-        method_df.to_postgis(
+        method_gdf.to_postgis(
             "temp_method",
             conn,
             schema="public",
             if_exists="replace",
             index=True,
-            index_label="id",
-            dtype={"floor_height_m": Numeric},
+            dtype={"id": UUID, "floor_height_m": Numeric},
         )
         click.echo("Copying cadastre to PostgreSQL...")
         cadastre_df.to_postgis(
