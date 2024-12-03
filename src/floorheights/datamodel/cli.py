@@ -220,16 +220,18 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 index_label="id",
             )
             # Get temp_cadastre table model from database
-            cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+            temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
             if flatten_cadastre:
                 click.echo("Flattening cadastre geometries...")
-                cadastre = etl.flatten_cadastre_geoms(session, conn, Base, cadastre)
+                temp_cadastre = etl.flatten_cadastre_geoms(
+                    session, conn, Base, temp_cadastre
+                )
 
             click.echo("Performing join with cadastre...")
             # Selects address-building matches by joining to common cadastre lots for
             # addresses geocoded to property centroids
-            select_query = etl.build_address_match_query("cadastre", cadastre)
+            select_query = etl.build_address_match_query("cadastre", temp_cadastre)
 
             if join_largest:
                 click.echo("Joining with largest building on lot...")
@@ -257,8 +259,9 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 @click.command()
 @click.option("-i", "--input-nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
-def ingest_nexis_method(input_nexis, join_largest,input_cadastre):
+def ingest_nexis_method(input_nexis, flatten_cadastre, join_largest, input_cadastre):
     """Ingest NEXIS floor height method"""
     click.echo("Loading NEXIS points...")
     try:
@@ -324,6 +327,10 @@ def ingest_nexis_method(input_nexis, join_largest,input_cadastre):
                 index_label="id",
             )
             temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+            if flatten_cadastre:
+                click.echo("Flattening cadastre geometries...")
+                temp_cadastre = etl.flatten_cadastre_geoms(session, conn, Base, temp_cadastre)
 
             click.echo("Inserting non-GNAF records into floor_measure table...")
             # Build select queries to insert into the floor_measure table for non GNAF addresses
@@ -402,6 +409,7 @@ def ingest_nexis_method(input_nexis, join_largest,input_cadastre):
 @click.command()
 @click.option("-i", "--input-data", required=True, type=str, help="Input validation OGR dataset file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=True, type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
 @click.option("--step-size", type=float, default=0.28, show_default=True, help="Step size value in metres.")  # fmt: skip
@@ -411,6 +419,7 @@ def ingest_nexis_method(input_nexis, join_largest,input_cadastre):
 def ingest_validation_method(
     input_data,
     input_cadastre,
+    flatten_cadastre,
     join_largest,
     ffh_field,
     step_size,
@@ -468,6 +477,10 @@ def ingest_validation_method(
         # Get temp table models from database
         temp_method = Table("temp_method", Base.metadata, autoload_with=conn)
         temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+        if flatten_cadastre:
+            click.echo("Flattening cadastre geometries...")
+            temp_cadastre = etl.flatten_cadastre_geoms(session, conn, Base, temp_cadastre)
 
         step_count_id = etl.get_or_create_method_id(session, "Step counting")
         survey_id = etl.get_or_create_method_id(session, "Surveyed")
