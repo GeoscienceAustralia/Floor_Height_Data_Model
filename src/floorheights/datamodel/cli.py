@@ -261,10 +261,15 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 @click.command()
 @click.option("-i", "--input-nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
+@click.option("--clip-to-cadastre", is_flag=True, help="Clip measure points by the cadastre dataset extents. This will speed up processing, but won't join measures outside the extent of the cadastre.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
-@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
-def ingest_nexis_method(input_nexis, flatten_cadastre, join_largest, input_cadastre):
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
+def ingest_nexis_method(input_nexis, clip_to_cadastre, flatten_cadastre, join_largest, input_cadastre):
     """Ingest NEXIS floor height method"""
+    if clip_to_cadastre and not input_cadastre:
+        raise click.UsageError(
+            "--clip-to-cadastre must be used with --input-cadastre"
+        )
     if join_largest and not input_cadastre:
         raise click.UsageError(
             "--join-largest-building must be used with --input-cadastre"
@@ -288,8 +293,10 @@ def ingest_nexis_method(input_nexis, flatten_cadastre, join_largest, input_cadas
                 cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
             except Exception as error:
                 raise click.exceptions.FileError(Path(input_cadastre).name, error)
-            # Clip NEXIS points to cadastre extent
-            nexis_gdf = gpd.clip(nexis_gdf, cadastre_gdf)
+            if clip_to_cadastre:
+                click.echo("Clipping NEXIS points to cadastre...")
+                # Clip NEXIS points to cadastre extent
+                nexis_gdf = gpd.clip(nexis_gdf, cadastre_gdf)
         else:
             # Subset NEXIS points based GNAF IDs in the database
             gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
