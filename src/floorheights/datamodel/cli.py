@@ -473,7 +473,7 @@ def ingest_validation_method(
     with session.begin():
         conn = session.connection()
         Base = declarative_base()
-        click.echo("Copying validation table to PostgreSQL...")
+        click.echo("Copying validation points to PostgreSQL...")
         method_gdf.to_postgis(
             "temp_method",
             conn,
