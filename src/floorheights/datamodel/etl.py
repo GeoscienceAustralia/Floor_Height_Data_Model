@@ -26,7 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, InstrumentedAttribute, DeclarativeMeta, aliased
 from typing import Literal
 
 from floorheights.datamodel.models import (
@@ -254,84 +254,159 @@ def flatten_cadastre_geoms(
     return Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
 
-def build_address_match_query(cadastre: Table) -> Select:
-    """Build address matching query"""
+def join_by_contains(
+    select_fields: list[InstrumentedAttribute | Column],
+    point_geom: InstrumentedAttribute | Column,
+) -> Select:
+    """Join by contains helper function"""
+    select_query = select(*select_fields).join(
+        Building, func.ST_Contains(Building.outline, point_geom)
+    )
+
+    return select_query
+
+
+def join_by_cadastre(
+    select_fields: list[InstrumentedAttribute | Column],
+    point_table: DeclarativeMeta | Table,
+    point_geom: InstrumentedAttribute | Column,
+    cadastre_table: Table,
+    cadastre_geom: Column,
+) -> Select:
+    """Join by cadastre helper function"""
     select_query = (
-        select(
-            AddressPoint.id.label("address_point_id"),
-            Building.id.label("building_id"),
-        )
-        .select_from(AddressPoint)
+        select(*select_fields)
+        .select_from(point_table)
         .join(
-            cadastre,
-            func.ST_Within(AddressPoint.location, cadastre.c.geometry),
+            cadastre_table,
+            func.ST_Within(point_geom, cadastre_geom),
         )
         .join(
             Building,
-            func.ST_Intersects(Building.outline, cadastre.c.geometry),
+            func.ST_Intersects(Building.outline, cadastre_geom),
         )
-        .where(AddressPoint.geocode_type == "PROPERTY CENTROID")
         .where(
-            # Join addresses where a building overlaps the lot by 50% of its area
-            func.ST_Area(func.ST_Intersection(Building.outline, cadastre.c.geometry))
+            # Join points where a building overlaps the lot by 50% of its area
+            func.ST_Area(func.ST_Intersection(Building.outline, cadastre_geom))
             / func.ST_Area(Building.outline)
             > 0.5,
-            # Don't join to any buildings already joined by within
-            ~exists().where(
-                address_point_building_association.c.building_id == Building.id
-            ),
         )
     )
 
     return select_query
 
 
-def build_knn_address_match_query(cadastre: Table, distance: int) -> Select:
-    """Build K-Nearest Neighbour address matching query"""
+def join_by_knn(
+    lateral_fields: list[InstrumentedAttribute | Column],
+    point_table: DeclarativeMeta | Table,
+    point_geom: InstrumentedAttribute | Column,
+    additional_select_fields: list[InstrumentedAttribute | Column],
+    cadastre_table: Table = None,
+    cadastre_geom: Column = None,
+    max_distance: int = 10,
+) -> Select:
+    """Join by K-Nearest Neighbour helper function"""
     lateral_subquery = (
         select(
-            AddressPoint.id.label("address_point_id"),
-            Building.id.label("building_id"),
+            *lateral_fields,
             Building.outline.label("outline"),
-            (AddressPoint.location.op("<->")(Building.outline)).label("dist"),
+            (point_geom.op("<->")(Building.outline)).label("dist"),
         )
         .order_by("dist")
         .limit(1)
         .lateral()
     )
 
-    select_query = (
-        select(
-            AddressPoint.id.label("address_point_id"),
-            lateral_subquery.c.building_id.label("building_id"),
-        )
-        .select_from(AddressPoint)
-        .outerjoin(
-            cadastre,
-            func.ST_Within(AddressPoint.location, cadastre.c.geometry),
-        )
-        .join(lateral_subquery, literal(True))
-        .where(
-            cadastre.c.geometry == None,
-            # Join addresses to building if it is within a distance threshold
+    select_query = select(
+        *additional_select_fields,
+        lateral_subquery.c.building_id.label("building_id"),
+    ).select_from(point_table)
+
+    if cadastre_table is None:
+        # Nearest neighbour join for all addresses, so if we don't have a cadastre at all
+        select_query = select_query.join(lateral_subquery, literal(True)).where(
             func.ST_Distance(
-                func.cast(AddressPoint.location, Geography),
+                func.cast(point_geom, Geography),
                 func.cast(lateral_subquery.c.outline, Geography),
             )
-            < distance,
-            # Don't join to any buildings already joined
+            < max_distance,
+        )
+    else:
+        # Nearest neighbour join for addresses outside the cadastre extent
+        select_query = (
+            # Outer join so we only take points outside the cadastre
+            select_query.outerjoin(
+                cadastre_table,
+                func.ST_Within(point_geom, cadastre_geom),
+            )
+            .join(lateral_subquery, literal(True))
+            .where(
+                cadastre_geom == None,
+                # Join addresses to nearest building if it is within a distance threshold
+                func.ST_Distance(
+                    func.cast(point_geom, Geography),
+                    func.cast(lateral_subquery.c.outline, Geography),
+                )
+                < max_distance,
+            )
+        )
+
+    return select_query
+
+
+def build_address_match_query(
+    join_by: Literal["intersects", "cadastre", "knn"], cadastre: Table = None
+) -> Select:
+    """Build address matching query"""
+    select_fields = [
+        AddressPoint.id.label("address_point_id"),
+        Building.id.label("building_id"),
+    ]
+
+    if join_by == "intersects":
+        select_query = join_by_contains(select_fields, AddressPoint.location).where(
+            AddressPoint.geocode_type == "BUILDING CENTROID"
+        )
+    elif join_by == "cadastre":
+        select_query = join_by_cadastre(
+            select_fields,
+            AddressPoint,
+            AddressPoint.location,
+            cadastre,
+            cadastre.c.geometry,
+        ).where(
+            AddressPoint.geocode_type == "PROPERTY CENTROID",
+            # Don't join to any buildings already joined by within
             ~exists().where(
-                address_point_building_association.c.building_id
-                == lateral_subquery.c.building_id
+                address_point_building_association.c.building_id == Building.id,
             ),
         )
-    )
+
+    elif join_by == "knn":
+        if cadastre is not None:
+            cadastre_geom = cadastre.c.geometry
+        else:
+            cadastre_geom = None
+
+        lateral_fields = [
+            AddressPoint.id.label("address_point_id"),
+            Building.id.label("building_id"),
+        ]
+        additional_select_fields = [AddressPoint.id.label("address_point_id")]
+        select_query = join_by_knn(
+            lateral_fields,
+            AddressPoint,
+            AddressPoint.location,
+            additional_select_fields=additional_select_fields,
+            cadastre_table=cadastre,
+            cadastre_geom=cadastre_geom,
+        )
 
     return select_query
 
 
 def insert_address_building_association(session: Session, select_query: Select):
-    """Insert records into the address_poing_building_association table from a select
+    """Insert records into the address_point_building_association table from a select
     query"""
     insert_query = (
         insert(address_point_building_association)

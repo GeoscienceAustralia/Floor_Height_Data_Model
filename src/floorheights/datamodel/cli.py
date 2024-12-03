@@ -198,17 +198,8 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
         conn = session.connection()
         Base = declarative_base()
         click.echo("Performing join by contains...")
-        # Selects address-building matches by buldings containing address points
-        # for addresses geocoded to building centroids
-        select_query = (
-            select(
-                AddressPoint.id.label("address_point_id"),
-                Building.id.label("building_id"),
-            )
-            .join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
-            .where(AddressPoint.geocode_type == "BUILDING CENTROID")
-        )
-
+        # Selects address-building matches for addresses geocoded to building centroids
+        select_query = etl.build_address_match_query(cadastre=False, join_by="intersects")
         etl.insert_address_building_association(session, select_query)
 
         if input_cadastre:
@@ -227,7 +218,6 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 index=True,
                 index_label="id",
             )
-
             # Get temp_cadastre table model from database
             cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
@@ -236,24 +226,28 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 cadastre = etl.flatten_cadastre_geoms(session, conn, Base, cadastre)
 
             click.echo("Performing join with cadastre...")
-            # Selects address-building matches by joining to common cadastre lots
-            select_query = etl.build_address_match_query(cadastre)
+            # Selects address-building matches by joining to common cadastre lots for
+            # addresses geocoded to property centroids
+            select_query = etl.build_address_match_query("cadastre", cadastre)
 
             if join_largest:
                 click.echo("Joining with largest building on lot...")
-                # Join to largest building on the cadastral lot for distinct address
+                # Modify select to join to largest building on the lot for distinct address
                 select_query = select_query.order_by(
                     AddressPoint.id, func.ST_Area(Building.outline).desc()
                 ).distinct(AddressPoint.id)
-
             etl.insert_address_building_association(session, select_query)
 
-            # Finish up by joining addresses to nearest neighbour buildings
+            # Finish up by joining addresses to nearest-neighbour buildings
             # that aren't within the cadastre and are within a distance threshold
-            select_query = etl.build_knn_address_match_query(cadastre, 10)
-
+            select_query = etl.build_address_match_query("knn", cadastre)
+            etl.insert_address_building_association(session, select_query)
+        else:
+            # If we don't use a cadastre, do a nearest-neighbour join 
+            select_query = etl.build_address_match_query("knn")
             etl.insert_address_building_association(session, select_query)
 
+        if input_cadastre:
             cadastre.drop(conn)
 
     click.echo("Joining complete")
