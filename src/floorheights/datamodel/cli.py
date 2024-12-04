@@ -2,9 +2,10 @@ import click
 import geopandas as gpd
 import pandas as pd
 import rasterio
+import uuid
 from pathlib import Path
 from shapely.geometry import box
-from sqlalchemy import Table, Numeric, select
+from sqlalchemy import Table, Numeric, UUID, select
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -198,28 +199,21 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
         conn = session.connection()
         Base = declarative_base()
         click.echo("Performing join by contains...")
-        # Selects address-building matches by buldings containing address points
-        # for addresses geocoded to building centroids
-        select_query = (
-            select(
-                AddressPoint.id.label("address_point_id"),
-                Building.id.label("building_id"),
-            )
-            .join(Building, func.ST_Contains(Building.outline, AddressPoint.location))
-            .where(AddressPoint.geocode_type == "BUILDING CENTROID")
+        # Selects address-building matches for addresses geocoded to building centroids
+        select_query = etl.build_address_match_query(
+            cadastre=False, join_by="intersects"
         )
-
         etl.insert_address_building_association(session, select_query)
 
         if input_cadastre:
             click.echo("Loading cadastre...")
             try:
-                cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+                cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
             except Exception as error:
                 raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
             click.echo("Copying cadastre to PostgreSQL...")
-            cadastre_df.to_postgis(
+            cadastre_gdf.to_postgis(
                 "temp_cadastre",
                 conn,
                 schema="public",
@@ -227,113 +221,193 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
                 index=True,
                 index_label="id",
             )
-
             # Get temp_cadastre table model from database
-            cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+            temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
             if flatten_cadastre:
                 click.echo("Flattening cadastre geometries...")
-                cadastre = etl.flatten_cadastre_geoms(session, conn, Base, cadastre)
+                temp_cadastre = etl.flatten_cadastre_geoms(
+                    session, conn, Base, temp_cadastre
+                )
 
             click.echo("Performing join with cadastre...")
-            # Selects address-building matches by joining to common cadastre lots
-            select_query = etl.build_address_match_query(cadastre)
+            # Selects address-building matches by joining to common cadastre lots for
+            # addresses geocoded to property centroids
+            select_query = etl.build_address_match_query("cadastre", temp_cadastre)
 
             if join_largest:
                 click.echo("Joining with largest building on lot...")
-                # Join to largest building on the cadastral lot for distinct address
+                # Modify select to join to largest building on the lot for distinct address
                 select_query = select_query.order_by(
                     AddressPoint.id, func.ST_Area(Building.outline).desc()
                 ).distinct(AddressPoint.id)
-
             etl.insert_address_building_association(session, select_query)
 
-            # Finish up by joining addresses to nearest neighbour buildings
+            # Finish up by joining addresses to nearest-neighbour buildings
             # that aren't within the cadastre and are within a distance threshold
-            select_query = etl.build_knn_address_match_query(cadastre, 10)
-
+            select_query = etl.build_address_match_query("knn", temp_cadastre)
+            etl.insert_address_building_association(session, select_query)
+        else:
+            # If we don't use a cadastre, do a nearest-neighbour join
+            select_query = etl.build_address_match_query("knn")
             etl.insert_address_building_association(session, select_query)
 
-            cadastre.drop(conn)
+        if input_cadastre:
+            temp_cadastre.drop(conn)
 
     click.echo("Joining complete")
 
 
 @click.command()
 @click.option("-i", "--input-nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")  # fmt: skip
-def ingest_nexis_method(input_nexis):
+@click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
+@click.option("--clip-to-cadastre", is_flag=True, help="Clip measure points by the cadastre dataset extents. This will speed up processing, but won't join measures outside the extent of the cadastre.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
+def ingest_nexis_method(input_nexis, clip_to_cadastre, flatten_cadastre, join_largest, input_cadastre):
     """Ingest NEXIS floor height method"""
+    if clip_to_cadastre and not input_cadastre:
+        raise click.UsageError(
+            "--clip-to-cadastre must be used with --input-cadastre"
+        )
+    if join_largest and not input_cadastre:
+        raise click.UsageError(
+            "--join-largest-building must be used with --input-cadastre"
+        )
+    if flatten_cadastre and not input_cadastre:
+        raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
+
     click.echo("Loading NEXIS points...")
     try:
-        nexis_df = pd.read_csv(
-            input_nexis,
-            usecols=[
-                "LID",
-                "floor_height_(m)",
-                "flood_vulnerability_function_id",
-                "NEXIS_CONSTRUCTION_TYPE",
-                "NEXIS_YEAR_BUILT",
-                "NEXIS_WALL_TYPE",
-                "GENERIC_EXT_WALL",
-                "LOCAL_YEAR_BUILT",
-            ],
-            dtype={
-                "LID": str,
-                "floor_height_(m)": float,
-                "flood_vulnerability_function_id": str,
-                "NEXIS_CONSTRUCTION_TYPE": str,
-                "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
-                "NEXIS_WALL_TYPE": str,
-                "GENERIC_EXT_WALL": str,
-                "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
-            },
-        )
+        nexis_gdf = etl.read_nexis_csv(input_nexis, 4283)
     except Exception as error:
         raise click.exceptions.FileError(input_nexis.name, error)
-
-    # Make NEXIS input column names lower case and remove special characters
-    nexis_df.columns = nexis_df.columns.str.lower().str.replace(r"\W+", "", regex=True)
-    # Drop rows that aren't a GNAF address
-    nexis_df = nexis_df[nexis_df["lid"].str.startswith("GNAF")]
-    nexis_df["lid"] = nexis_df["lid"].str[5:]  # Remove "GNAF_" prefix
 
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         Base = declarative_base()
-        # Select gnaf_ids in the database
-        gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
-        gnaf_ids = [row[0] for row in gnaf_ids]
 
-        # Subset NEXIS data based on selection
-        nexis_df = nexis_df[nexis_df["lid"].isin(gnaf_ids)]
+        if input_cadastre:
+            try:
+                cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+            except Exception as error:
+                raise click.exceptions.FileError(Path(input_cadastre).name, error)
+            if clip_to_cadastre:
+                click.echo("Clipping NEXIS points to cadastre...")
+                # Clip NEXIS points to cadastre extent
+                nexis_gdf = gpd.clip(nexis_gdf, cadastre_gdf)
+        else:
+            # Subset NEXIS points based GNAF IDs in the database
+            gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
+            gnaf_ids = [row[0] for row in gnaf_ids]
+            nexis_gdf = nexis_gdf[nexis_gdf["lid"].isin(gnaf_ids)]
+
+        nexis_gdf["id"] = [uuid.uuid4() for _ in range(len(nexis_gdf.index))]
+        nexis_gdf = nexis_gdf.set_index(["id"])
 
         click.echo("Copying NEXIS points to PostgreSQL...")
-        nexis_df.to_sql(
+        nexis_gdf.to_postgis(
             "temp_nexis",
             conn,
-            method=etl.psql_insert_copy,
+            schema="public",
             if_exists="replace",
-            dtype={
-                "floor_height_m": Numeric  # Set numeric so we don't need to type cast in the db
-            },
+            index=True,
+            dtype={"id": UUID, "floor_height_m": Numeric},
         )
         temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=conn)
 
-        # Build select query that will be inserted into the floor_measure table
-        modelled_query = etl.build_floor_measure_query(
+        # Build select query to insert into the floor_measure table for GNAF ID matches
+        method_id = etl.get_or_create_method_id(session, "Inverse transform sampling")
+        modelled_query_gnaf = etl.build_floor_measure_query(
             temp_nexis,
             "floor_height_m",
-            etl.get_or_create_method_id(session, "Inverse transform sampling"),
-            50,
-            0,
+            method_id,
+            accuracy_measure=50,
+            storey=0,
             join_by="gnaf_id",
             gnaf_id_col="lid",
         )
 
-        click.echo("Inserting records into floor_measure table...")
-        # Insert into the floor_measure table and get the ids of records inserted
-        modelled_inserted_ids = etl.insert_floor_measure(session, modelled_query)
+        click.echo("Inserting GNAF records into floor_measure table...")
+        modelled_inserted_ids = etl.insert_floor_measure(session, modelled_query_gnaf)
+
+        click.echo("Inserting non-GNAF records into floor_measure table...")
+        # Build select queries to insert into the floor_measure table for non GNAF addresses
+        # First, by point-building intersection
+        modelled_query_intersect = etl.build_floor_measure_query(
+            temp_nexis,
+            "floor_height_m",
+            method_id,
+            accuracy_measure=50,
+            storey=0,
+            join_by="intersects",
+        ).where(
+            # Modify the query to select non-GNAF addresses
+            temp_nexis.c.lid.notlike("GA%")
+        )
+        modelled_query_intersect_ids = etl.insert_floor_measure(
+            session, modelled_query_intersect
+        )
+
+        modelled_inserted_ids += modelled_query_intersect_ids
+
+        if input_cadastre:
+            click.echo("Copying cadastre to PostgreSQL...")
+            cadastre_gdf.to_postgis(
+                "temp_cadastre",
+                conn,
+                schema="public",
+                if_exists="replace",
+                index=True,
+                index_label="id",
+            )
+            temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+            if flatten_cadastre:
+                click.echo("Flattening cadastre geometries...")
+                temp_cadastre = etl.flatten_cadastre_geoms(
+                    session, conn, Base, temp_cadastre
+                )
+
+            # Second, by joining to buildings with a common cadastre lot
+            modelled_query_cadastre = etl.build_floor_measure_query(
+                temp_nexis,
+                "floor_height_m",
+                method_id,
+                accuracy_measure=50,
+                storey=0,
+                join_by="cadastre",
+                cadastre=temp_cadastre,
+            ).where(temp_nexis.c.lid.notlike("GA%"))
+
+            if join_largest:
+                click.echo("Joining with largest building on lot...")
+                # Modify select to join to largest building on the lot for distinct points
+                modelled_query_cadastre = modelled_query_cadastre.order_by(
+                    temp_nexis.c.id, func.ST_Area(Building.outline).desc()
+                ).distinct(temp_nexis.c.id)
+            modelled_inserted_cadastre_ids = etl.insert_floor_measure(
+                session, modelled_query_cadastre
+            )
+
+            # Third, by nearest-neighbour outside the extents of the cadastre
+            modelled_query_cadastre_knn = etl.build_floor_measure_query(
+                temp_nexis,
+                "floor_height_m",
+                method_id,
+                accuracy_measure=50,
+                storey=0,
+                join_by="knn",
+                cadastre=temp_cadastre,
+            ).where(temp_nexis.c.lid.notlike("GA%"))
+            modelled_inserted_cadastre_knn_ids = etl.insert_floor_measure(
+                session, modelled_query_cadastre_knn
+            )
+
+            modelled_inserted_ids += (
+                modelled_inserted_cadastre_ids + modelled_inserted_cadastre_knn_ids
+            )
 
         if modelled_inserted_ids:
             nexis_dataset_id = etl.get_or_create_dataset_id(
@@ -344,13 +418,17 @@ def ingest_nexis_method(input_nexis):
             )
 
         temp_nexis.drop(conn)
+        if input_cadastre:
+            temp_cadastre.drop(conn)
 
         click.echo("NEXIS ingestion complete")
 
 
 @click.command()
 @click.option("-i", "--input-data", required=True, type=str, help="Input validation OGR dataset file path.")  # fmt: skip
-@click.option("-c", "--input-cadastre", required=True, type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
+@click.option("-c", "--input-cadastre", type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
 @click.option("--step-size", type=float, default=0.28, show_default=True, help="Step size value in metres.")  # fmt: skip
 @click.option("--dataset-name", type=str, help="Dataset name.")
@@ -359,6 +437,8 @@ def ingest_nexis_method(input_nexis):
 def ingest_validation_method(
     input_data,
     input_cadastre,
+    flatten_cadastre,
+    join_largest,
     ffh_field,
     step_size,
     dataset_name,
@@ -366,87 +446,178 @@ def ingest_validation_method(
     dataset_src,
 ):
     """Ingest validation floor height method"""
-    # Read datasets into GeoDataFrames
+    if join_largest and not input_cadastre:
+        raise click.UsageError(
+            "--join-largest-building must be used with --input-cadastre"
+        )
+    if flatten_cadastre and not input_cadastre:
+        raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
+
+    click.echo("Loading validation points...")
     try:
-        method_df = etl.read_ogr_file(input_data)
+        method_gdf = etl.read_ogr_file(input_data)
     except Exception as error:
         raise click.exceptions.FileError(Path(input_data).name, error)
-    try:
-        cadastre_df = etl.read_ogr_file(input_cadastre, columns=["geometry"])
-    except Exception as error:
-        raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
-    if ffh_field not in method_df.columns:
+    if ffh_field not in method_gdf.columns:
         raise click.exceptions.BadParameter(
             f"Field '{ffh_field}' not found in input file"
         )
 
-    method_df = method_df.rename(columns={ffh_field: "floor_height_m"})
+    method_gdf = method_gdf.rename(columns={ffh_field: "floor_height_m"})
     # Make method input column names lower case and remove special characters
-    method_df.columns = method_df.columns.str.lower().str.replace(
+    method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True
     )
+    method_gdf["id"] = [uuid.uuid4() for _ in range(len(method_gdf.index))]
+    method_gdf = method_gdf.set_index(["id"])
 
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         Base = declarative_base()
-        click.echo("Copying validation table to PostgreSQL...")
-        method_df.to_postgis(
+        click.echo("Copying validation points to PostgreSQL...")
+        method_gdf.to_postgis(
             "temp_method",
             conn,
             schema="public",
             if_exists="replace",
             index=True,
-            index_label="id",
-            dtype={"floor_height_m": Numeric},
+            dtype={"id": UUID, "floor_height_m": Numeric},
         )
-        click.echo("Copying cadastre to PostgreSQL...")
-        cadastre_df.to_postgis(
-            "temp_cadastre",
-            conn,
-            schema="public",
-            if_exists="replace",
-            index=True,
-            index_label="id",
-        )
-
-        # Get temp table models from database
         temp_method = Table("temp_method", Base.metadata, autoload_with=conn)
-        temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+        if input_cadastre:
+            try:
+                cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+            except Exception as error:
+                raise click.exceptions.FileError(Path(input_cadastre).name, error)
+
+            click.echo("Copying cadastre to PostgreSQL...")
+            cadastre_gdf.to_postgis(
+                "temp_cadastre",
+                conn,
+                schema="public",
+                if_exists="replace",
+                index=True,
+                index_label="id",
+            )
+            temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+        if flatten_cadastre:
+            click.echo("Flattening cadastre geometries...")
+            temp_cadastre = etl.flatten_cadastre_geoms(
+                session, conn, Base, temp_cadastre
+            )
 
         step_count_id = etl.get_or_create_method_id(session, "Step counting")
         survey_id = etl.get_or_create_method_id(session, "Surveyed")
 
-        # Build select queries that will be inserted into the floor_measure table
-        step_count_query = etl.build_floor_measure_query(
+        click.echo("Inserting records into floor_measure table...")
+        # Build select queries that will be inserted into the floor_measure table,
+        # we do this for both surveyed and step counting methods
+        # First, by point-building intersection
+        step_count_query_intersects = etl.build_floor_measure_query(
             temp_method,
             "floor_height_m",
             step_count_id,
-            60,
-            0,
-            join_by="cadastre",
+            accuracy_measure=60,
+            storey=0,
+            join_by="intersects",
             step_counting=True,
             step_size=step_size,
-            cadastre=temp_cadastre,
         )
-        survey_query = etl.build_floor_measure_query(
+        step_count_intersects_ids = etl.insert_floor_measure(
+            session, step_count_query_intersects
+        )
+        survey_query_intersects = etl.build_floor_measure_query(
             temp_method,
             "floor_height_m",
             survey_id,
-            90,
-            0,
-            join_by="cadastre",
+            accuracy_measure=90,
+            storey=0,
+            join_by="intersects",
             step_counting=False,
             step_size=step_size,
-            cadastre=temp_cadastre,
         )
+        survey_intersects_ids = etl.insert_floor_measure(
+            session, survey_query_intersects
+        )
+        validation_inserted_ids = step_count_intersects_ids + survey_intersects_ids
 
-        click.echo("Inserting records into floor_measure table...")
-        # Insert into the floor_measure table and get the ids of records inserted
-        step_count_ids = etl.insert_floor_measure(session, step_count_query)
-        survey_ids = etl.insert_floor_measure(session, survey_query)
-        validation_inserted_ids = step_count_ids + survey_ids
+        if input_cadastre:
+            # Second, by joining to buildings with a common cadastre lot
+            step_count_query_cadastre_knn = etl.build_floor_measure_query(
+                temp_method,
+                "floor_height_m",
+                step_count_id,
+                accuracy_measure=60,
+                storey=0,
+                join_by="cadastre",
+                step_counting=True,
+                step_size=step_size,
+                cadastre=temp_cadastre,
+            )
+            survey_query_cadastre_knn = etl.build_floor_measure_query(
+                temp_method,
+                "floor_height_m",
+                survey_id,
+                accuracy_measure=90,
+                storey=0,
+                join_by="cadastre",
+                step_counting=False,
+                step_size=step_size,
+                cadastre=temp_cadastre,
+            )
+
+            if join_largest:
+                click.echo("Joining with largest building on lot...")
+                # Modify select to join to largest building on the lot for distinct points
+                step_count_query_cadastre_knn = step_count_query_cadastre_knn.order_by(
+                    temp_method.c.id, func.ST_Area(Building.outline).desc()
+                ).distinct(temp_method.c.id)
+                survey_query_cadastre_knn = survey_query_cadastre_knn.order_by(
+                    temp_method.c.id, func.ST_Area(Building.outline).desc()
+                ).distinct(temp_method.c.id)
+            step_count_cadastre_knn_ids = etl.insert_floor_measure(
+                session, step_count_query_cadastre_knn
+            )
+            survey_cadastre_knn_ids = etl.insert_floor_measure(
+                session, survey_query_cadastre_knn
+            )
+
+            # Third, by nearest-neighbour outside the extents of the cadastre
+            step_count_query_knn = etl.build_floor_measure_query(
+                temp_method,
+                "floor_height_m",
+                step_count_id,
+                accuracy_measure=60,
+                storey=0,
+                join_by="knn",
+                step_counting=True,
+                step_size=step_size,
+                cadastre=temp_cadastre,
+            )
+            step_count_knn_ids = etl.insert_floor_measure(session, step_count_query_knn)
+            step_count_query_knn = etl.build_floor_measure_query(
+                temp_method,
+                "floor_height_m",
+                survey_id,
+                accuracy_measure=60,
+                storey=0,
+                join_by="knn",
+                cadastre=temp_cadastre,
+                step_counting=False,
+                step_size=step_size,
+            )
+            survey_knn_ids = etl.insert_floor_measure(session, step_count_query_knn)
+
+            validation_inserted_ids += (
+                step_count_cadastre_knn_ids
+                + survey_cadastre_knn_ids
+                + step_count_knn_ids
+                + survey_knn_ids
+            )
 
         if validation_inserted_ids:
             if not dataset_name:
@@ -460,7 +631,8 @@ def ingest_validation_method(
             )
 
         temp_method.drop(conn)
-        temp_cadastre.drop(conn)
+        if input_cadastre:
+            temp_cadastre.drop(conn)
 
         click.echo("Validation ingestion complete")
 

@@ -26,7 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, InstrumentedAttribute, DeclarativeMeta, aliased
 from typing import Literal
 
 from floorheights.datamodel.models import (
@@ -51,6 +51,57 @@ def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
         gdf = gdf.to_crs(7844)
     gdf = gdf.to_crs(4326)
     return gdf
+
+
+def read_nexis_csv(input_nexis: str, crs: int = 4283) -> gpd.GeoDataFrame:
+    """Read NEXIS CSV file into GeoDataFrame
+
+    If the CSV's geodetic datum is GDA1994 (which is assumed by default), transform it
+    to GDA2020. Subsequently transform to WGS1984 for ingestion into PostgreSQL.
+    """
+    nexis_df = pd.read_csv(
+        input_nexis,
+        usecols=[
+            "LID",
+            "floor_height_(m)",
+            "flood_vulnerability_function_id",
+            "NEXIS_CONSTRUCTION_TYPE",
+            "NEXIS_YEAR_BUILT",
+            "NEXIS_WALL_TYPE",
+            "GENERIC_EXT_WALL",
+            "LOCAL_YEAR_BUILT",
+            "LATITUDE",
+            "LONGITUDE",
+        ],
+        dtype={
+            "LID": str,
+            "floor_height_(m)": float,
+            "flood_vulnerability_function_id": str,
+            "NEXIS_CONSTRUCTION_TYPE": str,
+            "NEXIS_YEAR_BUILT": str,  # Some records include year ranges
+            "NEXIS_WALL_TYPE": str,
+            "GENERIC_EXT_WALL": str,
+            "LOCAL_YEAR_BUILT": str,  # Some records include year ranges
+            "LATITUDE": float,
+            "LONGITUDE": float,
+        },
+    )
+
+    # Make NEXIS input column names lower case and remove special characters
+    nexis_df.columns = nexis_df.columns.str.lower().str.replace(r"\W+", "", regex=True)
+    # Remove "_GNAF" prefix
+    nexis_df.lid = nexis_df.lid.str.removeprefix("GNAF_")
+
+    nexis_gdf = gpd.GeoDataFrame(
+        nexis_df,
+        geometry=gpd.GeoSeries.from_xy(nexis_df.longitude, nexis_df.latitude, crs=crs),
+    )
+    nexis_gdf = nexis_gdf.drop(columns=["latitude", "longitude"])
+    if nexis_gdf.crs.geodetic_crs.equals(CRS.from_epsg(4283).geodetic_crs):
+        nexis_gdf = nexis_gdf.to_crs(7844)
+    nexis_gdf = nexis_gdf.to_crs(4326)
+
+    return nexis_gdf
 
 
 def psql_insert_copy(
@@ -192,95 +243,172 @@ def flatten_cadastre_geoms(
     )
     flat_temp_cadastre.create(conn)
 
-    insert_query = insert(temp_cadastre).from_select(["geometry"], select_query)
+    insert_query = insert(flat_temp_cadastre).from_select(["geometry"], select_query)
     session.execute(insert_query)
 
     temp_cadastre.drop(conn)  # Drop the original temp_cadastre table
     # Rename the flat_temp_cadastre table
-    session.execute(text("ALTER TABLE flat_temp_cadastre RENAME temp_cadastre"))
+    session.execute(text("ALTER TABLE flat_temp_cadastre RENAME TO temp_cadastre"))
 
     # Return flat cadastre metadata for subsequent joining
     return Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
 
-def build_address_match_query(cadastre: Table) -> Select:
-    """Build address matching query"""
+def join_by_contains(
+    select_fields: list[InstrumentedAttribute | Column],
+    point_geom: InstrumentedAttribute | Column,
+) -> Select:
+    """Join by contains helper function"""
+    select_query = select(*select_fields).join(
+        Building, func.ST_Contains(Building.outline, point_geom)
+    )
+
+    return select_query
+
+
+def join_by_cadastre(
+    select_fields: list[InstrumentedAttribute | Column],
+    point_table: DeclarativeMeta | Table,
+    point_geom: InstrumentedAttribute | Column,
+    cadastre_table: Table,
+    cadastre_geom: Column,
+) -> Select:
+    """Join by cadastre helper function"""
     select_query = (
-        select(
-            AddressPoint.id.label("address_point_id"),
-            Building.id.label("building_id"),
-        )
-        .select_from(AddressPoint)
+        select(*select_fields)
+        .select_from(point_table)
         .join(
-            cadastre,
-            func.ST_Within(AddressPoint.location, cadastre.c.geometry),
+            cadastre_table,
+            func.ST_Within(point_geom, cadastre_geom),
         )
         .join(
             Building,
-            func.ST_Intersects(Building.outline, cadastre.c.geometry),
+            func.ST_Intersects(Building.outline, cadastre_geom),
         )
-        .where(AddressPoint.geocode_type == "PROPERTY CENTROID")
         .where(
-            # Join addresses where a building overlaps the lot by 50% of its area
-            func.ST_Area(func.ST_Intersection(Building.outline, cadastre.c.geometry))
+            # Join points where a building overlaps the lot by 50% of its area
+            func.ST_Area(func.ST_Intersection(Building.outline, cadastre_geom))
             / func.ST_Area(Building.outline)
             > 0.5,
-            # Don't join to any buildings already joined by within
-            ~exists().where(
-                address_point_building_association.c.building_id == Building.id
-            ),
         )
     )
 
     return select_query
 
 
-def build_knn_address_match_query(cadastre: Table, distance: int) -> Select:
-    """Build K-Nearest Neighbour address matching query"""
+def join_by_knn(
+    lateral_fields: list[InstrumentedAttribute | Column],
+    point_table: DeclarativeMeta | Table,
+    point_geom: InstrumentedAttribute | Column,
+    additional_select_fields: list[InstrumentedAttribute | Column],
+    cadastre_table: Table = None,
+    cadastre_geom: Column = None,
+    max_distance: int = 10,
+) -> Select:
+    """Join by K-Nearest Neighbour helper function
+
+    Source: https://postgis.net/workshops/postgis-intro/knn.html
+    """
     lateral_subquery = (
         select(
-            AddressPoint.id.label("address_point_id"),
-            Building.id.label("building_id"),
+            *lateral_fields,
             Building.outline.label("outline"),
-            (AddressPoint.location.op("<->")(Building.outline)).label("dist"),
+            (point_geom.op("<->")(Building.outline)).label("dist"),
         )
         .order_by("dist")
         .limit(1)
         .lateral()
     )
 
-    select_query = (
-        select(
-            AddressPoint.id.label("address_point_id"),
-            lateral_subquery.c.building_id.label("building_id"),
-        )
-        .select_from(AddressPoint)
-        .outerjoin(
-            cadastre,
-            func.ST_Within(AddressPoint.location, cadastre.c.geometry),
-        )
-        .join(lateral_subquery, literal(True))
-        .where(
-            cadastre.c.geometry == None,
-            # Join addresses to building if it is within a distance threshold
+    select_query = select(
+        *additional_select_fields,
+        lateral_subquery.c.building_id.label("building_id"),
+    ).select_from(point_table)
+
+    if cadastre_table is None:
+        # Nearest neighbour join for all addresses, if we don't have a cadastre
+        select_query = select_query.join(lateral_subquery, literal(True)).where(
             func.ST_Distance(
-                func.cast(AddressPoint.location, Geography),
+                func.cast(point_geom, Geography),
                 func.cast(lateral_subquery.c.outline, Geography),
             )
-            < distance,
-            # Don't join to any buildings already joined
+            < max_distance,
+        )
+    else:
+        # Nearest neighbour join for addresses outside the cadastre extent
+        select_query = (
+            # Outer join so we only take points outside the cadastre
+            select_query.outerjoin(
+                cadastre_table,
+                func.ST_Within(point_geom, cadastre_geom),
+            )
+            .join(lateral_subquery, literal(True))
+            .where(
+                cadastre_geom == None,
+                # Join addresses to nearest building if it is within a distance threshold
+                func.ST_Distance(
+                    func.cast(point_geom, Geography),
+                    func.cast(lateral_subquery.c.outline, Geography),
+                )
+                < max_distance,
+            )
+        )
+
+    return select_query
+
+
+def build_address_match_query(
+    join_by: Literal["intersects", "cadastre", "knn"], cadastre: Table = None
+) -> Select:
+    """Build address matching query"""
+    select_fields = [
+        AddressPoint.id.label("address_point_id"),
+        Building.id.label("building_id"),
+    ]
+
+    if join_by == "intersects":
+        select_query = join_by_contains(select_fields, AddressPoint.location).where(
+            AddressPoint.geocode_type == "BUILDING CENTROID"
+        )
+    elif join_by == "cadastre":
+        select_query = join_by_cadastre(
+            select_fields,
+            AddressPoint,
+            AddressPoint.location,
+            cadastre,
+            cadastre.c.geometry,
+        ).where(
+            AddressPoint.geocode_type == "PROPERTY CENTROID",
+            # Don't join to any buildings already joined by within
             ~exists().where(
-                address_point_building_association.c.building_id
-                == lateral_subquery.c.building_id
+                address_point_building_association.c.building_id == Building.id,
             ),
         )
-    )
+    elif join_by == "knn":
+        if cadastre is not None:
+            cadastre_geom = cadastre.c.geometry
+        else:
+            cadastre_geom = None
+
+        lateral_fields = [
+            AddressPoint.id.label("address_point_id"),
+            Building.id.label("building_id"),
+        ]
+        additional_select_fields = [AddressPoint.id.label("address_point_id")]
+        select_query = join_by_knn(
+            lateral_fields,
+            AddressPoint,
+            AddressPoint.location,
+            additional_select_fields=additional_select_fields,
+            cadastre_table=cadastre,
+            cadastre_geom=cadastre_geom,
+        )
 
     return select_query
 
 
 def insert_address_building_association(session: Session, select_query: Select):
-    """Insert records into the address_poing_building_association table from a select
+    """Insert records into the address_point_building_association table from a select
     query"""
     insert_query = (
         insert(address_point_building_association)
@@ -362,60 +490,70 @@ def build_floor_measure_query(
     method_id: uuid.UUID,
     accuracy_measure: float,
     storey: int,
-    join_by: Literal["gnaf_id", "cadastre"],
+    join_by: Literal["gnaf_id", "intersects", "cadastre", "knn"],
     gnaf_id_col: str = None,
     step_counting: bool = None,
     step_size: float = None,
     cadastre: Table = None,
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
-    select_query = select(
-        func.gen_random_uuid().label("id"),
+    building_id = Building.id.label("building_id")
+    select_fields = [
+        floor_measure_table.c.id.label("id"),
         literal(storey).label("storey"),
         floor_measure_table.c[ffh_field].label("height"),
         literal(accuracy_measure).label("accuracy_measure"),
-        Building.id.label("building_id"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
             floor_measure_table, [ffh_field, "id", "geometry"]
         ).label("aux_info"),
-    )
+        building_id,
+    ]
 
     if join_by == "gnaf_id":
         # Join by GNAF ID matching
         select_query = (
-            select_query.select_from(Building)
+            select(*select_fields)
+            .select_from(Building)
             .join(AddressPoint, Building.address_points)
             .join(
                 floor_measure_table,
                 floor_measure_table.c[gnaf_id_col] == AddressPoint.gnaf_id,
             )
         )
+    elif join_by == "intersects":
+        select_query = join_by_contains(select_fields, floor_measure_table.c.geometry)
     elif join_by == "cadastre":
-        # Join floor_measure point to cadastre polygon by nearest neighbour
-        # https://postgis.net/workshops/postgis-intro/knn.html
-        lateral_subquery = (
-            select(
-                cadastre.c.id.label("id"),
-                cadastre.c.geometry.label("geometry"),
-                (floor_measure_table.c.geometry.op("<->")(cadastre.c.geometry)).label(
-                    "dist"
-                ),
+        select_query = join_by_cadastre(
+            select_fields,
+            floor_measure_table,
+            floor_measure_table.c.geometry,
+            cadastre,
+            cadastre.c.geometry,
+        ).where(
+            ~exists().where(
+                FloorMeasure.building_id == building_id,
             )
-            .order_by("dist")
-            .limit(1)
-            .lateral()
         )
-        select_query = (
-            select_query.select_from(
-                # Join on True to make it a cross join
-                floor_measure_table.join(lateral_subquery, literal(True)).join(
-                    AddressPoint,
-                    func.ST_Within(AddressPoint.location, lateral_subquery.c.geometry),
-                )
-            )
-            .join(Building, AddressPoint.buildings)
-            .distinct(Building.id)
+    elif join_by == "knn":
+        if cadastre is not None:
+            cadastre_geom = cadastre.c.geometry
+        else:
+            cadastre_geom = None
+
+        # Remove building id from additional fields because we select it from the lateral subquery
+        select_fields.remove(building_id)
+
+        lateral_fields = [
+            Building.id.label("building_id"),
+        ]
+        select_query = join_by_knn(
+            lateral_fields,
+            floor_measure_table,
+            floor_measure_table.c.geometry,
+            additional_select_fields=select_fields,
+            cadastre_table=cadastre,
+            cadastre_geom=cadastre_geom,
         )
 
     if step_counting is True and step_size:
@@ -444,12 +582,13 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
                 "storey",
                 "height",
                 "accuracy_measure",
-                "building_id",
                 "method_id",
                 "aux_info",
+                "building_id",
             ],
             select_query,
         )
+        .on_conflict_do_nothing()
         .returning(FloorMeasure.id)
     )
     return ids.all()
