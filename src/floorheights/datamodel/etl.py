@@ -303,7 +303,7 @@ def join_by_knn(
     additional_select_fields: list[InstrumentedAttribute | Column],
     cadastre_table: Table = None,
     cadastre_geom: Column = None,
-    max_distance: int = 10,
+    knn_max_distance: int = 10,
 ) -> Select:
     """Join by K-Nearest Neighbour helper function
 
@@ -332,7 +332,7 @@ def join_by_knn(
                 func.cast(point_geom, Geography),
                 func.cast(lateral_subquery.c.outline, Geography),
             )
-            < max_distance,
+            < knn_max_distance,
         )
     else:
         # Nearest neighbour join for addresses outside the cadastre extent
@@ -350,7 +350,13 @@ def join_by_knn(
                     func.cast(point_geom, Geography),
                     func.cast(lateral_subquery.c.outline, Geography),
                 )
-                < max_distance,
+                < knn_max_distance,
+            )
+            .where(
+                ~exists().where(
+                    address_point_building_association.c.address_point_id
+                    == AddressPoint.id,
+                )
             )
         )
 
@@ -358,7 +364,9 @@ def join_by_knn(
 
 
 def build_address_match_query(
-    join_by: Literal["intersects", "cadastre", "knn"], cadastre: Table = None
+    join_by: Literal["intersects", "cadastre", "knn"],
+    cadastre: Table = None,
+    knn_max_distance: int = 10,
 ) -> Select:
     """Build address matching query"""
     select_fields = [
@@ -402,6 +410,7 @@ def build_address_match_query(
             additional_select_fields=additional_select_fields,
             cadastre_table=cadastre,
             cadastre_geom=cadastre_geom,
+            knn_max_distance=knn_max_distance,
         )
 
     return select_query

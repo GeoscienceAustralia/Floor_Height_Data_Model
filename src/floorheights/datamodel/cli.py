@@ -201,8 +201,15 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
         click.echo("Performing join by contains...")
         # Selects address-building matches for addresses geocoded to building centroids
         select_query = etl.build_address_match_query(
-            cadastre=False, join_by="intersects"
+            join_by="intersects"
         )
+        etl.insert_address_building_association(session, select_query)
+
+        click.echo("Performing join by knn...")
+        # Selects address-building matches for addresses geocoded to building centroids
+        select_query = etl.build_address_match_query(
+            join_by="knn", knn_max_distance=5
+        ).where(AddressPoint.geocode_type == "BUILDING CENTROID")
         etl.insert_address_building_association(session, select_query)
 
         if input_cadastre:
@@ -245,12 +252,12 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
             # Finish up by joining addresses to nearest-neighbour buildings
             # that aren't within the cadastre and are within a distance threshold
-            select_query = etl.build_address_match_query("knn", temp_cadastre)
+            select_query = etl.build_address_match_query("knn", temp_cadastre, 10)
             etl.insert_address_building_association(session, select_query)
         else:
             # If we don't use a cadastre, do a nearest-neighbour join
             select_query = etl.build_address_match_query("knn")
-            etl.insert_address_building_association(session, select_query)
+            etl.insert_address_building_association(session, select_query, 10)
 
         if input_cadastre:
             temp_cadastre.drop(conn)
