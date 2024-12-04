@@ -194,8 +194,8 @@ const fetchFloorMeasures = async (building_id: string) => {
         <div class="flex flex-col gap-0">
           <div class="subheading"> Absolute Height (m) </div>
           <div class="flex flex-row w-full">
-            <div class="basis-1/2"> min: {{ clickedBuilding.min_height_ahd }} </div>
-            <div class="basis-1/2"> max: {{ clickedBuilding.max_height_ahd }} </div>
+            <div class="basis-1/2"> min: {{ clickedBuilding.min_height_ahd.toFixed(3) }} </div>
+            <div class="basis-1/2"> max: {{ clickedBuilding.max_height_ahd.toFixed(3) }} </div>
           </div>
         </div>
       </div>
@@ -256,7 +256,7 @@ const fetchFloorMeasures = async (building_id: string) => {
 
       <div class="flex flex-1 flex-col min-h-0">
         <div class="flex max-h-full min-h-0">
-          <ScrollPanel class="flex max-h-full w-full" style="height: unset;">
+          <ScrollPanel class="flex-1 max-h-full w-full" style="height: unset;">
             <div>
               <FloorMeasureComponent v-for="fm in clickedFloorMeasures" :floorMeasure="fm"></FloorMeasureComponent>
             </div>
