@@ -194,8 +194,8 @@ const fetchFloorMeasures = async (building_id: string) => {
         <div class="flex flex-col gap-0">
           <div class="subheading"> Absolute Height (m) </div>
           <div class="flex flex-row w-full">
-            <div class="basis-1/2"> min: {{ clickedBuilding.min_height_ahd }} </div>
-            <div class="basis-1/2"> max: {{ clickedBuilding.max_height_ahd }} </div>
+            <div class="basis-1/2"> min: {{ clickedBuilding.min_height_ahd.toFixed(3) }} </div>
+            <div class="basis-1/2"> max: {{ clickedBuilding.max_height_ahd.toFixed(3) }} </div>
           </div>
         </div>
       </div>
