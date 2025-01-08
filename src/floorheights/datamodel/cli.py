@@ -198,12 +198,6 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
     with session.begin():
         conn = session.connection()
         Base = declarative_base()
-        click.echo("Performing join by contains...")
-        # Selects address-building matches for addresses geocoded to building centroids
-        select_query = etl.build_address_match_query(
-            join_by="intersects"
-        )
-        etl.insert_address_building_association(session, select_query)
 
         click.echo("Performing join by knn...")
         # Selects address-building matches for addresses geocoded to building centroids
