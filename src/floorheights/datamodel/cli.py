@@ -150,6 +150,11 @@ def ingest_buildings(
     min_heights, max_heights = etl.sample_dem_with_buildings(dem, buildings)
     buildings["min_height_ahd"] = min_heights
     buildings["max_height_ahd"] = max_heights
+
+    # Drop rows outside the extent of the DEM
+    buildings = buildings[buildings["min_height_ahd"].notna()]
+    buildings = buildings[buildings["max_height_ahd"].notna()]
+
     buildings = buildings.round({"min_height_ahd": 3, "max_height_ahd": 3})
 
     # TODO: Handle building footprints overlapping the edge of the DEM
