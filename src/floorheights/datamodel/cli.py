@@ -676,6 +676,25 @@ def ingest_validation_method(
         click.echo("Validation ingestion complete")
 
 
+@click.command()
+@click.option("-o", "--output-file", required=True, type=str, help="Output OGR dataset file path.")  # fmt: skip
+@click.option("--normalise_aux_info", is_flag=True, help="Normalise the aux_info field into separate columns.")  # fmt: skip
+def export_ogr_file(output_file: str, normalise_aux_info: bool):
+    """Export a denormalised OGR file of the data model"""
+    select_query = etl.build_denormalised_query()
+
+    session = SessionLocal()
+    with session.begin():
+        conn = session.connection()
+        try:
+            output_file = Path(output_file)
+            click.echo(f"Writing OGR file: {output_file}")
+            etl.write_ogr_file(output_file, select_query, conn, normalise_aux_info)
+        except Exception as error:
+            raise click.exceptions.FileError(Path(output_file).name, error)
+    click.echo(f"Export complete")
+
+
 cli.add_command(create_dummy_address_point)
 cli.add_command(create_dummy_building)
 cli.add_command(ingest_address_points)
@@ -683,6 +702,7 @@ cli.add_command(ingest_buildings)
 cli.add_command(join_address_buildings)
 cli.add_command(ingest_nexis_method)
 cli.add_command(ingest_validation_method)
+cli.add_command(export_ogr_file)
 
 
 if __name__ == "__main__":

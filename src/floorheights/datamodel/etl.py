@@ -1,5 +1,6 @@
 import csv
 import geopandas as gpd
+import json
 import numpy as np
 import pandas as pd
 import rasterio
@@ -651,3 +652,43 @@ def insert_floor_measure_dataset_association(
     session.execute(
         insert(floor_measure_dataset_association).values(floor_measure_dataset_values)
     )
+
+
+def build_denormalised_query() -> Select:
+    """Build denormalised query"""
+    select_query = (
+        select(
+            AddressPoint.gnaf_id,
+            AddressPoint.address.label("gnaf_address"),
+            Building.min_height_ahd.label("min_building_height_ahd"),
+            Building.max_height_ahd.label("max_building_height_ahd"),
+            Dataset.name.label("dataset"),
+            Method.name.label("method"),
+            FloorMeasure.storey,
+            FloorMeasure.height.label("floor_height_m"),
+            FloorMeasure.accuracy_measure.label("accuracy"),
+            FloorMeasure.aux_info,
+            Building.outline,
+        )
+        .select_from(FloorMeasure)
+        .join(Method, FloorMeasure.method)
+        .join(Dataset, FloorMeasure.datasets)
+        .join(Building)
+        .join(AddressPoint, Building.address_points)
+    )
+
+    return select_query
+
+
+def write_ogr_file(
+    output_file: str, select_query: Select, conn: Connection, normalise_aux_info=False
+):
+    gdf = gpd.read_postgis(select_query, con=conn, geom_col="outline")
+
+    if normalise_aux_info is True:
+        gdf = pd.concat([gdf, pd.json_normalize(gdf.pop("aux_info"))], axis=1)
+    else:
+        # Convert dict rows to JSON strings
+        gdf.aux_info = gdf.aux_info.apply(json.dumps)
+
+    gdf.to_file(output_file)
