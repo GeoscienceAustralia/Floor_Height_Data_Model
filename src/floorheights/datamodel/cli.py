@@ -102,11 +102,17 @@ def ingest_address_points(input_address, chunksize):
 @click.command()
 @click.option("-i", "--input-buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")  # fmt: skip
 @click.option("-d", "--input-dem", required=True, type=click.File(), help="Input DEM file path.")  # fmt: skip
-@click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
+@click.option("-s", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
+@click.option("--split-by-cadastre", type=str, help="Split buildings by cadastre, specify input cadastre vector file path for splitting.")  # fmt: skip
 @click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
 @click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
 def ingest_buildings(
-    input_buildings, input_dem, chunksize, remove_small, remove_overlapping
+    input_buildings,
+    input_dem,
+    chunksize,
+    split_by_cadastre,
+    remove_small,
+    remove_overlapping,
 ):
     """Ingest building footprints"""
     click.echo("Loading DEM...")
@@ -138,6 +144,33 @@ def ingest_buildings(
     buildings = buildings.to_crs(
         dem_crs.to_epsg()
     )  # Transform buildings to CRS of our DEM
+
+    if split_by_cadastre:
+        click.echo("Splitting buildings by cadastre...")
+        try:
+            cadastre = etl.read_ogr_file(split_by_cadastre, columns=["geometry"])
+            cadastre = cadastre.to_crs(dem.crs)
+        except Exception as error:
+            raise click.exceptions.FileError(Path(split_by_cadastre).name, error)
+
+        session = SessionLocal()
+        with session.begin():
+            conn = session.connection()
+            try:
+                # Get address points from db
+                address_points = gpd.read_postgis(
+                    select(AddressPoint),
+                    conn,
+                    geom_col="location",
+                )
+                address_points = address_points.to_crs(dem.crs)
+            except Exception as error:
+                raise click.exceptions.BadParameter(
+                    "--split-by-cadastre can only be used after ingesting address_points.",
+                    error,
+                )
+
+            buildings = etl.split_by_cadastre(address_points, buildings, cadastre)
 
     if remove_small:
         click.echo(f"Removing buildings < {remove_small} m^2...")

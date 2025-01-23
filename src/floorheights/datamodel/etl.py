@@ -212,6 +212,40 @@ def remove_overlapping_geoms(session: Session, overlap_threshold: float) -> Resu
     return session.execute(delete_stmt)
 
 
+def split_by_cadastre(
+    address_points: gpd.GeoDataFrame,
+    buildings: gpd.GeoDataFrame,
+    cadastre: gpd.GeoDataFrame,
+) -> gpd.GeoDataFrame:
+    """Split geometries by cadastre boundaries"""
+    # Spatial join to find points within buildings
+    address_in_buildings = gpd.sjoin(
+        address_points, buildings, how="inner", predicate="within"
+    )
+
+    # Count unique points for each building
+    unique_address_count = address_in_buildings.groupby("index_right")[
+        "location"
+    ].apply(lambda x: len(set(x)))
+
+    # Filter buildings with multiple unique points
+    buildings_to_split = buildings.loc[
+        unique_address_count[unique_address_count > 1].index
+    ]
+
+    # Split these buildings by cadastre lots
+    split_buildings = gpd.overlay(buildings_to_split, cadastre, how="intersection")
+
+    # Update the original GeoDataFrame
+    buildings.loc[buildings_to_split.index, "geometry"] = None
+    buildings = gpd.GeoDataFrame(
+        pd.concat([buildings.geometry, split_buildings.geometry], ignore_index=True),
+        crs=buildings.crs,
+    )
+    buildings = buildings.explode()
+    return buildings
+
+
 def flatten_cadastre_geoms(
     session: Session, conn: Connection, Base, temp_cadastre: Table
 ) -> Table:
