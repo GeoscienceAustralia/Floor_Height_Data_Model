@@ -95,12 +95,27 @@ const fetchFloorMeasures = async (building_id: string) => {
   }
 }
 
+const selectedLocation = ref<{ label: string; value: [number, number] } | null>(null);
+const locationOptions = ref([
+  { label: 'Wagga Wagga, NSW', value: [147.360, -35.120] },
+  { label: 'Launceston, TAS', value: [147.144, -41.434] },
+  { label: 'Tweed Heads, NSW', value: [153.537, -28.205] },
+]);
+
+// Update the map location based on the selected location
+const updateMapLocation = () => {
+  if (selectedLocation.value) {
+    map.value.setCenter(selectedLocation.value.value);
+    map.value.setZoom(12);
+  }
+};
+
 </script>
 
 <template>
   <Toast />
   <div id="map" class="h-full w-full"></div>
-  <div id="overlay" class="flex flex-col gap-2 flex-1 ">
+  <div id="overlay-left" class="flex flex-col gap-2 flex-1 ">
     <div class="flex-none p-panel" style="background-color: var(--p-primary-color);">
       <div class="flex items-center gap-2" style="padding: var(--p-panel-header-padding);">
         <i class="pi pi-home" style="font-size: 2rem; color: white;"></i>
@@ -265,6 +280,25 @@ const fetchFloorMeasures = async (building_id: string) => {
       </div>
     </Panel>
   </div>
+
+  <div id="overlay-right" class="flex flex-col gap-2 flex-1">
+    <Panel class="flex-none">
+      <template #header>
+        <div class="flex items-center gap-2" style="margin-bottom: -20px; width: 100%;">
+          <i class="pi pi-map-marker" style="font-size: 1rem"></i>
+          <span class="font-bold">Location</span>
+          <Select
+            v-model="selectedLocation"
+            :options="locationOptions"
+            optionLabel="label"
+            placeholder="Select location"
+            class="w-full"
+            @change="updateMapLocation"
+            />
+        </div>
+      </template>
+    </Panel>
+    </div>
 </template>
 
 <style scoped>
@@ -273,10 +307,19 @@ const fetchFloorMeasures = async (building_id: string) => {
   height: 100vh;
 }
 
-#overlay {
+#overlay-left {
   position: absolute;
   top: 20px;
   left: 20px;
+  max-height: calc(100vh - 40px);
+  width: 400px;
+  z-index: 1; /* Ensures it stays above the map */
+}
+
+#overlay-right {
+  position: absolute;
+  top: 20px;
+  right: 20px;
   max-height: calc(100vh - 40px);
   width: 400px;
   z-index: 1; /* Ensures it stays above the map */

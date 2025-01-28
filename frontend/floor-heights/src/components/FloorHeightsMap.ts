@@ -33,8 +33,10 @@ export default class FloorHeightsMap {
         // style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
         // // NSW bounds
         // bounds: [[140.7002, -37.4088], [153.9388, -27.8566]],
-        // Wagga Wagga bounds
-        bounds: [[147.255, -35.052], [147.485, -35.252]],
+        // Wagga Wagga
+        // bounds: [[147.255, -35.052], [147.485, -35.252]],
+        center: [147.360, -35.120],
+        zoom: 12
       });
       
       this.map.on('add', async () => {
@@ -83,6 +85,14 @@ export default class FloorHeightsMap {
         this.emitter.emit('buildingClicked', f?.properties);
       });
     })
+  }
+
+  setCenter(center: [number, number]): void {
+    this.map?.setCenter(center);
+  }
+
+  setZoom(zoom: number): void {
+    this.map?.setZoom(zoom);
   }
 
   fitBounds (bounds: LngLatBoundsLike) {

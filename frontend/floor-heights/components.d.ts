@@ -14,6 +14,7 @@ declare module 'vue' {
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     Main: typeof import('./src/components/Main.vue')['default']
     MultiSelect: typeof import('primevue/multiselect')['default']
+    Select: typeof import('primevue/select')['default']
     Toast: typeof import('primevue/toast')['default']
     ToggleButton: typeof import('primevue/togglebutton')['default']
   }
