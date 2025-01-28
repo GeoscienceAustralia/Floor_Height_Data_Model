@@ -10,6 +10,11 @@ import FloorMeasureComponent from './FloorMeasureComponent.vue';
 
 const toast = useToast();
 
+const isPanelVisible = ref(false);
+const togglePanelVisibility = () => {
+  isPanelVisible.value = !isPanelVisible.value;
+};
+
 const map = ref();
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
@@ -282,7 +287,12 @@ const updateMapLocation = () => {
   </div>
 
   <div id="overlay-right" class="flex flex-col gap-2 flex-1">
-    <Panel class="flex-none">
+    <Button
+      @click="togglePanelVisibility"
+      :icon="isPanelVisible ? 'pi pi-times' : 'pi pi-bars'"
+      class="p-button self-end"
+    />
+    <Panel v-if="isPanelVisible" class="flex-none" >
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -20px; width: 100%;">
           <i class="pi pi-map-marker" style="font-size: 1rem"></i>
