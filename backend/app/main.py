@@ -22,8 +22,12 @@ dictConfig(LogConfig().dict())
 logger = logging.getLogger("floorheights")
 
 from floorheights.datamodel.models import (
-    AddressPoint, Building, FloorMeasure, Method,
-    SessionLocal
+    AddressPoint,
+    Building,
+    FloorMeasure,
+    Method,
+    Dataset,
+    SessionLocal,
 )
 
 from app.martin import setup_building_layer_fn
@@ -143,7 +147,6 @@ def read_source_ids(
     return fc
 
 
-
 # TODO: this should really just be based on the SQLAlchemy model
 # instead of redefining it
 class FloorMeasureWeb(BaseModel):
@@ -207,3 +210,58 @@ def list_methods(
         for r in db.query(Method.name).order_by(Method.name)
     ]
 
+
+@app.get("/api/export-geojson/", response_model=FeatureCollection)
+def export_geojson(
+    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
+):
+    if Authentication:
+        pass
+
+    result = (
+        db.query(
+            AddressPoint.gnaf_id,
+            AddressPoint.address.label("gnaf_address"),
+            Building.min_height_ahd.label("min_building_height_ahd"),
+            Building.max_height_ahd.label("max_building_height_ahd"),
+            Dataset.name.label("dataset"),
+            Method.name.label("method"),
+            FloorMeasure.storey,
+            FloorMeasure.height.label("floor_height_m"),
+            FloorMeasure.accuracy_measure.label("accuracy"),
+            FloorMeasure.aux_info,
+            geoalchemy2.functions.ST_AsGeoJSON(Building.outline).label("geometry"),
+        )
+        .select_from(FloorMeasure)
+        .join(Method, FloorMeasure.method)
+        .join(Dataset, FloorMeasure.datasets)
+        .join(Building)
+        .join(AddressPoint, Building.address_points)
+    ).all()
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="GeoJSON export failed")
+
+    geojson_features = []
+    for feature in result:
+        geojson_feature = {
+            "type": "Feature",
+            "geometry": json.loads(feature.geometry),
+            "properties": {
+                "gnaf_id": feature.gnaf_id,
+                "address": feature.gnaf_address,
+                "min_building_height_ahd": feature.min_building_height_ahd,
+                "max_building_height_ahd": feature.max_building_height_ahd,
+                "dataset": feature.dataset,
+                "method": feature.method,
+                "storey": feature.storey,
+                "floor_height_m": feature.floor_height_m,
+                "accuracy": feature.accuracy,
+                "aux_info": feature.aux_info,
+            },
+        }
+        geojson_features.append(geojson_feature)
+
+    fc = FeatureCollection(type="FeatureCollection", features=geojson_features)
+
+    return fc
