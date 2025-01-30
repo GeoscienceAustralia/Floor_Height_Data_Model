@@ -22,8 +22,14 @@ interface FloorMeasure {
   datasets: string[];
 }
 
+interface MapLocation {
+  label: string;
+  coordinates: [number, number];
+}
+
 export type {
   AddressPoint,
   Building,
-  FloorMeasure
+  FloorMeasure,
+  MapLocation
 };

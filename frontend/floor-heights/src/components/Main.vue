@@ -5,15 +5,11 @@ import Panel from 'primevue/panel';
 import ScrollPanel from 'primevue/scrollpanel';
 import { useToast } from "primevue/usetoast";
 import FloorHeightsMap from './FloorHeightsMap';
-import {FloorMeasure, AddressPoint, Building} from './types';
+import {FloorMeasure, AddressPoint, Building, MapLocation} from './types';
 import FloorMeasureComponent from './FloorMeasureComponent.vue';
+import MenuComponent from './MenuComponent.vue';
 
 const toast = useToast();
-
-const isPanelVisible = ref(false);
-const togglePanelVisibility = () => {
-  isPanelVisible.value = !isPanelVisible.value;
-};
 
 const map = ref();
 const showAddressPoints = ref(false);
@@ -100,27 +96,28 @@ const fetchFloorMeasures = async (building_id: string) => {
   }
 }
 
-const selectedLocation = ref<{ label: string; value: [number, number] } | null>(null);
-const locationOptions = ref([
-  { label: 'Wagga Wagga, NSW', value: [147.360, -35.120] },
-  { label: 'Launceston, TAS', value: [147.144, -41.434] },
-  { label: 'Tweed Heads, NSW', value: [153.537, -28.205] },
+// Define locations for the menu dropdown
+const mapLocationOptions = ref<MapLocation[]>([
+  { label: 'Wagga Wagga, NSW', coordinates: [147.360, -35.120] },
+  { label: 'Launceston, TAS', coordinates: [147.144, -41.434] },
+  { label: 'Tweed Heads, NSW', coordinates: [153.537, -28.205] },
 ]);
 
-// Update the map location based on the selected location
-const updateMapLocation = () => {
-  if (selectedLocation.value) {
-    map.value.setCenter(selectedLocation.value.value);
+const selectedMapLocation = ref<MapLocation | null>(null);
+
+// Method to update the map location
+const updateMapLocation = (location: MapLocation) => {
+  if (map) {
+    map.value.setCenter(location.coordinates);
     map.value.setZoom(12);
   }
 };
-
 </script>
 
 <template>
   <Toast />
   <div id="map" class="h-full w-full"></div>
-  <div id="overlay-left" class="flex flex-col gap-2 flex-1 ">
+  <div id="overlay" class="flex flex-col gap-2 flex-1 ">
     <div class="flex-none p-panel" style="background-color: var(--p-primary-color);">
       <div class="flex items-center gap-2" style="padding: var(--p-panel-header-padding);">
         <i class="pi pi-home" style="font-size: 2rem; color: white;"></i>
@@ -285,30 +282,7 @@ const updateMapLocation = () => {
       </div>
     </Panel>
   </div>
-
-  <div id="overlay-right" class="flex flex-col gap-2 flex-1">
-    <Button
-      @click="togglePanelVisibility"
-      :icon="isPanelVisible ? 'pi pi-times' : 'pi pi-bars'"
-      class="p-button self-end"
-    />
-    <Panel v-if="isPanelVisible" class="flex-none" >
-      <template #header>
-        <div class="flex items-center gap-2" style="margin-bottom: -20px; width: 100%;">
-          <i class="pi pi-map-marker" style="font-size: 1rem"></i>
-          <span class="font-bold">Location</span>
-          <Select
-            v-model="selectedLocation"
-            :options="locationOptions"
-            optionLabel="label"
-            placeholder="Select location"
-            class="w-full"
-            @change="updateMapLocation"
-            />
-        </div>
-      </template>
-    </Panel>
-    </div>
+  <MenuComponent v-model:modelValue="selectedMapLocation" :options="mapLocationOptions" @change="updateMapLocation"/>
 </template>
 
 <style scoped>
@@ -317,19 +291,10 @@ const updateMapLocation = () => {
   height: 100vh;
 }
 
-#overlay-left {
+#overlay {
   position: absolute;
   top: 20px;
   left: 20px;
-  max-height: calc(100vh - 40px);
-  width: 400px;
-  z-index: 1; /* Ensures it stays above the map */
-}
-
-#overlay-right {
-  position: absolute;
-  top: 20px;
-  right: 20px;
   max-height: calc(100vh - 40px);
   width: 400px;
   z-index: 1; /* Ensures it stays above the map */
