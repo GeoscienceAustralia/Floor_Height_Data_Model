@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineProps, defineEmits, ref } from "vue";
+import { ref } from "vue";
 import Panel from "primevue/panel";
 import Select from "primevue/select";
 import { MapLocation } from "./types.ts";
