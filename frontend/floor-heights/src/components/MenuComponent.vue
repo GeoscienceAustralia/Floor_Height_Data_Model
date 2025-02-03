@@ -45,17 +45,8 @@ const isFetchingGeoJSON = ref<boolean>(false);
 const fetchGeoJSON = async () => {
   isFetchingGeoJSON.value = true;
   try {
-    // Fetch FeoJSON file
+    // Fetch GeoJSON file
     const response = await fetch(`api/export-geojson`);
-    if (!response.ok) {
-      console.error("Failed to fetch GeoJSON:", response);
-      toast.add({
-        severity: "error",
-        summary: "Error",
-        detail: "Failed to fetch GeoJSON",
-        life: 3000,
-      });
-    }
     const geojson = await response.json();
     const blob = new Blob([JSON.stringify(geojson)], {
       type: "application/json",
