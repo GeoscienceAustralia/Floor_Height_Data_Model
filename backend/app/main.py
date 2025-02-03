@@ -1,23 +1,22 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+import json
+import logging
+import os
+import secrets
+import uuid
+from contextlib import asynccontextmanager
+from logging.config import dictConfig
+from typing import Annotated, Optional
+
+import geoalchemy2
+import geoalchemy2.functions
+import sqlalchemy
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from contextlib import asynccontextmanager
-from typing import Annotated
-import geoalchemy2.functions
-import geoalchemy2.functions
 from geojson_pydantic import FeatureCollection
 from pydantic import BaseModel
-import secrets
-import sqlalchemy
-import geoalchemy2
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from typing import Optional
-import uuid
-import json
-import os
-from logging.config import dictConfig
-import logging
 
 from app.log import LogConfig
 dictConfig(LogConfig().dict())
@@ -26,14 +25,13 @@ logger = logging.getLogger("floorheights")
 from floorheights.datamodel.models import (
     AddressPoint,
     Building,
+    Dataset,
     FloorMeasure,
     Method,
-    Dataset,
     SessionLocal,
 )
 
 from app.martin import setup_building_layer_fn
-
 
 description = """
 The Floor Heights API provides access to the Floor Heights
