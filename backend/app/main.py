@@ -12,7 +12,7 @@ import sqlalchemy
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from geojson_pydantic import FeatureCollection
+from geojson_pydantic import FeatureCollection, Feature
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -102,6 +102,42 @@ def authenticated(credentials: HTTPBasicCredentials = Depends(security)):
 @app.get("/api/")
 def read_root():
     return {"Hello": "Floor Heights API"}
+
+
+@app.get("/api/building/{building_id}/geom/", response_model=Feature)
+def get_building_geom(
+    building_id: str,
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication=Depends(authenticated),
+):
+    if Authentication:
+        pass
+
+    uuid_id = uuid.UUID(building_id)
+
+    result: Building = db.get(Building, uuid_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Building not found")
+
+    try:
+        data = db.execute(
+            select(geoalchemy2.functions.ST_AsGeoJSON(Building.outline)).where(
+                Building.id == uuid_id
+            )
+        ).one_or_none()
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail="Database error")
+
+    if not data or not data[0]:
+        raise HTTPException(status_code=404, detail="Building geometry not found")
+
+    geojson_feature = {
+        "type": "Feature",
+        "geometry": json.loads(data[0]),
+        "properties": {},
+    }
+
+    return Feature(**geojson_feature)
 
 
 @app.get(

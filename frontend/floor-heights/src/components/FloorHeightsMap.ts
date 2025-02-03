@@ -1,6 +1,6 @@
 import { Map, LngLatBoundsLike, AddLayerObject } from 'maplibre-gl';
 
-import { Point, Polygon} from 'geojson';
+import { Point } from 'geojson';
 
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -81,7 +81,7 @@ export default class FloorHeightsMap {
       this.map.on('click', 'building_fh', (e) => {
         let f = e.features?.[0];
         console.log(f);
-        this.highlightBuilding(f?.geometry as Polygon);
+        this.highlightBuilding(f?.properties.id);
         this.emitter.emit('buildingClicked', f?.properties);
       });
     })
@@ -224,16 +224,12 @@ export default class FloorHeightsMap {
     }, 'address_point');
   }
 
-  highlightBuilding(geometry: Polygon) {
+  highlightBuilding(buildingId: string) {
     this.hideHighlightedFeature();
 
     this.map?.addSource('highlighted-feature', {
       type: 'geojson',
-      data: {
-        type: 'Feature',
-        geometry: geometry, // Use the geometry from the clicked feature
-        properties: {}
-      }
+      data: `api/building/${buildingId}/geom/`
     });
 
     // Add a new layer to render the geometry
