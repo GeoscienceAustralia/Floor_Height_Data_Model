@@ -31,12 +31,10 @@ export default class FloorHeightsMap {
         container: 'map',
         style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
         // style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-        // // NSW bounds
-        // bounds: [[140.7002, -37.4088], [153.9388, -27.8566]],
-        // Wagga Wagga
-        // bounds: [[147.255, -35.052], [147.485, -35.252]],
         center: [147.360, -35.120],
-        zoom: 12
+        zoom: 12,
+        maxZoom: 22,
+        minZoom: 3
       });
       
       this.map.on('add', async () => {
