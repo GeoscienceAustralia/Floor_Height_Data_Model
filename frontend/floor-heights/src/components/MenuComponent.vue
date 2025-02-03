@@ -46,7 +46,7 @@ const fetchGeoJSON = async () => {
   isFetchingGeoJSON.value = true;
   try {
     // Fetch GeoJSON file
-    const response = await fetch(`api/export-geojson`);
+    const response = await fetch(`api/geojson/`);
     const geojson = await response.json();
     const blob = new Blob([JSON.stringify(geojson)], {
       type: "application/json",

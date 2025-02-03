@@ -5,7 +5,6 @@ import secrets
 import uuid
 from contextlib import asynccontextmanager
 from logging.config import dictConfig
-from typing import Annotated, Optional
 
 import geoalchemy2
 import geoalchemy2.functions
@@ -265,7 +264,7 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
         raise ValueError("Invalid geometry data encountered.") from e
 
 
-@app.get("/api/export-geojson/", response_class=StreamingResponse)
+@app.get("/api/geojson/", response_class=StreamingResponse)
 def export_geojson(
     db: sqlalchemy.orm.Session = Depends(get_db),
     Authentication=Depends(authenticated)
