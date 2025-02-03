@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -10,6 +11,7 @@ import secrets
 import sqlalchemy
 import geoalchemy2
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional
 import uuid
 import json
@@ -211,57 +213,86 @@ def list_methods(
     ]
 
 
-@app.get("/api/export-geojson/", response_model=FeatureCollection)
+def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
+    try:
+        query = (
+            db.query(
+                AddressPoint.gnaf_id,
+                AddressPoint.address.label("gnaf_address"),
+                Building.min_height_ahd.label("min_building_height_ahd"),
+                Building.max_height_ahd.label("max_building_height_ahd"),
+                Dataset.name.label("dataset"),
+                Method.name.label("method"),
+                FloorMeasure.storey,
+                FloorMeasure.height.label("floor_height_m"),
+                FloorMeasure.accuracy_measure.label("accuracy"),
+                FloorMeasure.aux_info,
+                geoalchemy2.functions.ST_AsGeoJSON(Building.outline).label("geometry"),
+            )
+            .select_from(FloorMeasure)
+            .join(Method, FloorMeasure.method)
+            .join(Dataset, FloorMeasure.datasets)
+            .join(Building)
+            .join(AddressPoint, Building.address_points)
+        ).yield_per(1000)
+
+        data_returned = False
+        for feature in query:
+            data_returned = True
+            yield {
+                "type": "Feature",
+                "geometry": json.loads(feature.geometry),
+                "properties": {
+                    "gnaf_id": feature.gnaf_id,
+                    "address": feature.gnaf_address,
+                    "min_building_height_ahd": feature.min_building_height_ahd,
+                    "max_building_height_ahd": feature.max_building_height_ahd,
+                    "dataset": feature.dataset,
+                    "method": feature.method,
+                    "storey": feature.storey,
+                    "floor_height_m": feature.floor_height_m,
+                    "accuracy": feature.accuracy,
+                    "aux_info": feature.aux_info,
+                },
+            }
+        if not data_returned:
+            logger.warning("No data returned from the database query.")
+            raise ValueError("No data found for the given query.")
+
+    except SQLAlchemyError as e:
+        logger.error(f"Database query failed: {e}")
+        raise RuntimeError("An error occurred while querying the database.") from e
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse geometry as JSON: {e}")
+        raise ValueError("Invalid geometry data encountered.") from e
+
+
+@app.get("/api/export-geojson/", response_class=StreamingResponse)
 def export_geojson(
-    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication=Depends(authenticated)
 ):
     if Authentication:
         pass
 
-    result = (
-        db.query(
-            AddressPoint.gnaf_id,
-            AddressPoint.address.label("gnaf_address"),
-            Building.min_height_ahd.label("min_building_height_ahd"),
-            Building.max_height_ahd.label("max_building_height_ahd"),
-            Dataset.name.label("dataset"),
-            Method.name.label("method"),
-            FloorMeasure.storey,
-            FloorMeasure.height.label("floor_height_m"),
-            FloorMeasure.accuracy_measure.label("accuracy"),
-            FloorMeasure.aux_info,
-            geoalchemy2.functions.ST_AsGeoJSON(Building.outline).label("geometry"),
-        )
-        .select_from(FloorMeasure)
-        .join(Method, FloorMeasure.method)
-        .join(Dataset, FloorMeasure.datasets)
-        .join(Building)
-        .join(AddressPoint, Building.address_points)
-    ).all()
+    def generate():
+        try:
+            yield '{"type": "FeatureCollection", "features": [\n'
+            first = True
+            for feature in query_geojson(db):
+                if not first:
+                    yield ",\n"
+                yield json.dumps(feature)
+                first = False
+            yield "\n]}"
+        except ValueError as e:
+            logger.error(f"Query returned no data: {e}")
+            raise HTTPException(status_code=404, detail="No data found for the query.")
+        except RuntimeError as e:
+            logger.error(f"Error generating GeoJSON: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate GeoJSON.")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
-    if result is None:
-        raise HTTPException(status_code=404, detail="GeoJSON export failed")
-
-    geojson_features = []
-    for feature in result:
-        geojson_feature = {
-            "type": "Feature",
-            "geometry": json.loads(feature.geometry),
-            "properties": {
-                "gnaf_id": feature.gnaf_id,
-                "address": feature.gnaf_address,
-                "min_building_height_ahd": feature.min_building_height_ahd,
-                "max_building_height_ahd": feature.max_building_height_ahd,
-                "dataset": feature.dataset,
-                "method": feature.method,
-                "storey": feature.storey,
-                "floor_height_m": feature.floor_height_m,
-                "accuracy": feature.accuracy,
-                "aux_info": feature.aux_info,
-            },
-        }
-        geojson_features.append(geojson_feature)
-
-    fc = FeatureCollection(type="FeatureCollection", features=geojson_features)
-
-    return fc
+    return StreamingResponse(generate(), media_type="application/json")
