@@ -13,7 +13,6 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from geojson_pydantic import FeatureCollection, Feature
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -21,6 +20,7 @@ from app.log import LogConfig
 dictConfig(LogConfig().dict())
 logger = logging.getLogger("floorheights")
 
+from app.schemas import FloorMeasureResponse
 from floorheights.datamodel.models import (
     AddressPoint,
     Building,
@@ -182,21 +182,9 @@ def read_source_ids(
     return fc
 
 
-# TODO: this should really just be based on the SQLAlchemy model
-# instead of redefining it
-class FloorMeasureWeb(BaseModel):
-    id: str
-    storey: int
-    height: float
-    accuracy_measure: float
-    aux_info: dict | None = None
-    method: str
-    datasets: list[str]
-
-
 @app.get(
     "/api/floor-height-data/{building_id}",
-    response_model=list[FloorMeasureWeb],
+    response_model=list[FloorMeasureResponse],
 )
 def get_floor_height_data(
     building_id: str,
@@ -211,11 +199,11 @@ def get_floor_height_data(
     if result is None:
         raise HTTPException(status_code=404, detail="Building not found")
 
-    floor_measures: list[FloorMeasureWeb] = []
+    floor_measures: list[FloorMeasureResponse] = []
     fm_db: FloorMeasure
     for fm_db in result.floor_measures:
         datasets = [ds.name for ds in fm_db.datasets]
-        floor_measure = FloorMeasureWeb(
+        floor_measure = FloorMeasureResponse(
             id=str(fm_db.id),
             storey=fm_db.storey,
             height=fm_db.height,
