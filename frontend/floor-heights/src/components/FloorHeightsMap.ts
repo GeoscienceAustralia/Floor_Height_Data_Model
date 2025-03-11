@@ -1,4 +1,4 @@
-import { Map, LngLatBoundsLike, AddLayerObject } from 'maplibre-gl';
+import { Map, LngLatBoundsLike, AddLayerObject, NavigationControl } from 'maplibre-gl';
 
 import { Point } from 'geojson';
 
@@ -57,7 +57,15 @@ export default class FloorHeightsMap {
 
         return resolve(this.map);
       });
-      
+
+      this.map.addControl(
+        new NavigationControl({
+          visualizePitch: true,
+          showZoom: true,
+          showCompass: true,
+        }), 'bottom-right'
+      );
+
       this.map.on('click', 'address_point', (e) => {
         let f = e.features?.[0];
         this.highlightAddressPoint(f?.geometry as Point);
