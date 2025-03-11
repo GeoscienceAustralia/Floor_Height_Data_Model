@@ -369,7 +369,7 @@ const updateMapLocation = (location: MapLocation) => {
         <div class="flex max-h-full min-h-0">
           <ScrollPanel class="flex-1 max-h-full w-full" style="height: unset;">
             <div>
-              <FloorMeasureComponent v-for="fm in clickedFloorMeasures" :floorMeasure="fm"></FloorMeasureComponent>
+              <FloorMeasureComponent v-for="(fm, index) in clickedFloorMeasures" :floorMeasure="fm" :isLast="index === clickedFloorMeasures.length - 1"></FloorMeasureComponent>
             </div>
           </ScrollPanel>
         </div>

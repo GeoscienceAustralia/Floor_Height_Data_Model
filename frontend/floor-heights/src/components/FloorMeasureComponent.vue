@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import type { PropType } from 'vue';
 import Divider from 'primevue/divider';
-import type { FloorMeasure} from './types';
+import type { FloorMeasure } from './types';
 
 defineProps({
-  floorMeasure: Object as PropType<FloorMeasure>
+  floorMeasure: Object as PropType<FloorMeasure>,
+  isLast: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 </script>
@@ -27,16 +31,14 @@ defineProps({
       <div class="subheading"> Accuracy: </div>
       <div> {{ floorMeasure?.accuracy_measure }} </div>
     </div>
-    <Divider />
+    <Divider v-if="!isLast" />
   </div>
 </template>
 
 <style scoped>
-
 .subheading {
-  color:var(--p-primary-500);
+  color: var(--p-primary-500);
   font-size: 0.9em;
   margin-bottom: -4px;
 }
-
 </style>
