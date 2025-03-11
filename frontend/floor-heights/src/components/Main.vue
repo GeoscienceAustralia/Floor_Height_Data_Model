@@ -88,8 +88,12 @@ watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection], async ([sho
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection, buildingOutlineMethodFilterSelection, buildingOutlineFillSelection], async ([showBuildingOutlines, datasets, methods, fillOption]) => {
+watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection], async ([showBuildingOutlines, methods, datasets, fillOption]) => {
   if (showBuildingOutlines) {
+    // Sort so that the dropdown options match the API request
+    methods.sort()
+    datasets.sort()
+
     // If a method filter isn't applied, set to all values
     if (fillOption && (!methods || methods.length === 0)) {
       methods = buildingOutlineMethodFilterOptions.value
@@ -102,16 +106,16 @@ watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection, buildingOutl
     
     if (fillOption) {
       if (fillOption === 'Floor Height') {
-        console.log('Graduated Floor Heights fill applied:', methods);
-        map.value.setBuildingFloorHeightGraduatedFill(methods);
+        console.log('Graduated Floor Heights fill applied:', methods, datasets);
+        map.value.setBuildingFloorHeightGraduatedFill(methods, datasets);
       }
       if (fillOption == 'Dataset') {
-        console.log("Categorised Dataset fill set to:", datasets);
-        map.value.setBuildingDatasetCategorisedFill(datasets);
+        console.log("Categorised Dataset fill set to:", methods, datasets);
+        map.value.setBuildingDatasetCategorisedFill(methods, datasets);
       }
       if (fillOption === 'Method') {
-        console.log('Categorised Method fill set to:', methods);
-        map.value.setBuildingMethodCategorisedFill(methods);
+        console.log('Categorised Method fill set to:', methods, datasets);
+        map.value.setBuildingMethodCategorisedFill(methods, datasets);
       }
 
     } else {

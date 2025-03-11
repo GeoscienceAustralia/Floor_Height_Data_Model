@@ -134,7 +134,12 @@ export default class FloorHeightsMap {
     return `hsl(${hue}, 70%, 50%)`;
   }
 
-  setBuildingDatasetCategorisedFill(datasets: string[]) { 
+  setBuildingDatasetCategorisedFill(methods: string[], datasets: string[]) { 
+    let queryParams = {
+      method_name: methods,
+      dataset_name: datasets
+    };
+
     // Generate Cartesian product of the datasets
     const combinations = this.generateCombinations(datasets);
 
@@ -155,7 +160,7 @@ export default class FloorHeightsMap {
 
     if (this.map?.getSource('building_query')) {
       this.map?.getSource('building_query')?.setTiles([
-          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(datasets.toString())}`
+          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams).toString()}`
         ]);
     }
 
@@ -166,7 +171,12 @@ export default class FloorHeightsMap {
     }
   }
 
-  setBuildingMethodCategorisedFill(methods: string[]) { 
+  setBuildingMethodCategorisedFill(methods: string[], datasets: string[]) {
+    let queryParams = {
+      method_name: methods,
+      dataset_name: datasets
+    };
+
     // Generate Cartesian product of the methods
     const combinations = this.generateCombinations(methods);
 
@@ -184,10 +194,10 @@ export default class FloorHeightsMap {
       matchExpression.push(key, color); // Add combination and its colour
     }
     matchExpression.push('#FFFFFF'); // Assign a colour for empty categories
-
+    
     if (this.map?.getSource('building_query')) {
       this.map?.getSource('building_query')?.setTiles([
-          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(methods.toString())}`
+          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams).toString()}`
         ]);
     }
 
@@ -198,14 +208,13 @@ export default class FloorHeightsMap {
     }
   }
 
-  setBuildingFloorHeightGraduatedFill(method_name: string) {
+  setBuildingFloorHeightGraduatedFill(methods: string[], datasets: string[]) {
     let queryParams = {
-      method_name: method_name,
-      // other_param: 'other value'
+      method_name: methods,
+      dataset_name: datasets
     };
 
     if (this.map?.getSource('building_query')) {
-      // this.map?.removeSource('building_query');
       this.map?.getSource('building_query')?.setTiles([
           `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams).toString()}`
         ]);

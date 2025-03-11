@@ -43,6 +43,10 @@ BEGIN
         NOT jsonb_exists(query_params, 'method_name') 
         OR m.name = ANY(string_to_array(query_params->>'method_name', ','))
       )
+      AND (
+        NOT jsonb_exists(query_params, 'dataset_name') 
+        OR d.name = ANY(string_to_array(query_params->>'dataset_name', ','))
+      )
     GROUP BY building.id
   ) as tile WHERE geom IS NOT NULL;
 
