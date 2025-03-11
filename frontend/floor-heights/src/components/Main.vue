@@ -15,8 +15,11 @@ const map = ref();
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
 const showBuildingOutlineOptions = ref(false);
+// const showBuildingOutlineOptions = ref(true);
 const buildingOutlineMethodFilterOptions = ref<String[]>([]);
 const buildingOutlineMethodFilterSelection = ref<String[]>([]);
+const buildingOutlineDatasetFilterOptions = ref<String[]>([]);
+const buildingOutlineDatasetFilterSelection = ref<String[]>([]);
 const buildingOutlineFillSelection = ref<string | null>(null);
 
 const clickedAddressPoint = ref<AddressPoint | null>(null);
@@ -45,6 +48,20 @@ onMounted(async () => {
     );
   }
 
+  try {
+    buildingOutlineDatasetFilterOptions.value = (await axios.get<String[]>(`api/datasets/`)).data;
+  } catch (error) {
+    console.error(`Failed to fetch datasets`);
+    toast.add(
+      {
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Failed to fetch dataset list',
+        life: 3000
+      }
+    );
+  }
+
   map.value.emitter.on('addressPointClicked', onAddressPointClicked);
   map.value.emitter.on('buildingClicked', onBuildingClicked);
 
@@ -66,17 +83,41 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([show
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineFillSelection], async ([showBuildingOutlines, methods, fillOption]) => {
+watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection], async ([showBuildingOutlines, datasets]) => {
+  if (showBuildingOutlines) {
+    map.value.setDatasetFilter(datasets);
+  }
+});
+
+// watch(buildingOutlineDatasetFilterSelection, async (datasets, _) => {
+//   // map.value.setDatasetFilter(methods);
+// });
+
+// watch(buildingOutlineMethodFillSelection, async (methods, _) => {
+//   map.value.setMethodGraduatedFill(methods);
+// });
+
+
+watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection, buildingOutlineMethodFilterSelection, buildingOutlineFillSelection], async ([showBuildingOutlines, datasets, methods, fillOption]) => {
   if (showBuildingOutlines) {
     // If a method filter isn't applied, set to all values
     if (fillOption && (!methods || methods.length === 0)) {
       methods = buildingOutlineMethodFilterOptions.value
+    }
+
+    // If a dataset filter isn't applied, set to all values
+    if (fillOption && (!datasets || datasets.length === 0)) {
+      datasets = buildingOutlineDatasetFilterOptions.value
     }
     
     if (fillOption) {
       if (fillOption === 'Floor Height') {
         console.log('Graduated Floor Heights fill applied:', methods);
         map.value.setBuildingFloorHeightGraduatedFill(methods);
+      }
+      if (fillOption == 'Dataset') {
+        console.log("Categorised Dataset fill set to:", datasets);
+        map.value.setBuildingDatasetCategorisedFill(datasets);
       }
       if (fillOption === 'Method') {
         console.log('Categorised Method fill set to:', methods);
@@ -124,8 +165,9 @@ const fetchFloorMeasures = async (building_id: string) => {
 
 // Define options for the fill dropdown
 const buildingOutlineFillOptions = ref<string[]>([
-  'Method',
   'Floor Height',
+  'Dataset',
+  'Method',
 ]);
 
 // Define locations for the menu dropdown
@@ -207,6 +249,15 @@ const updateMapLocation = (location: MapLocation) => {
             v-model="buildingOutlineMethodFilterSelection"
             :options="buildingOutlineMethodFilterOptions"
             placeholder="Filter Methods"
+            class="w-full min-w-0"
+          />
+        </div>
+        <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
+          <i class="pi pi-filter" style="font-size: 1rem"></i>
+          <MultiSelect
+            v-model="buildingOutlineDatasetFilterSelection"
+            :options="buildingOutlineDatasetFilterOptions"
+            placeholder="Filter Datasets"
             class="w-full min-w-0"
           />
         </div>

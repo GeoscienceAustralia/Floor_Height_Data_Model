@@ -233,6 +233,20 @@ def list_methods(
         for r in db.query(Method.name).order_by(Method.name)
     ]
 
+@app.get(
+    "/api/datasets/",
+    response_model=list[str],
+)
+def list_datasets(
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication = Depends(authenticated)
+):
+    if Authentication:
+        pass
+    return [
+        r[0] 
+        for r in db.query(Dataset.name).order_by(Dataset.name)
+    ]
 
 def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
     try:

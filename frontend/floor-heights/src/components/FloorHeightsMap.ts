@@ -134,8 +134,39 @@ export default class FloorHeightsMap {
     return `hsl(${hue}, 70%, 50%)`;
   }
 
+  setBuildingDatasetCategorisedFill(datasets: string[]) { 
+    // Generate Cartesian product of the datasets
+    const combinations = this.generateCombinations(datasets);
+
+    // Assign unique colour to each combination
+    const combinationColors = combinations.reduce((acc, combination) => {
+      const key = combination.join(', ');
+      acc[key] = this.generateColor(key);
+      return acc;
+    }, {} as Record<string, string>);
+
+    // Construct the match expression
+    const matchExpression = ['match', ['get', 'dataset_names']];
+
+    for (const [key, color] of Object.entries(combinationColors)) {
+      matchExpression.push(key, color); // Add combination and its colour
+    }
+    matchExpression.push('#FFFFFF'); // Assign a colour for empty categories
+
+    if (this.map?.getSource('building_query')) {
+      this.map?.getSource('building_query')?.setTiles([
+          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(datasets.toString())}`
+        ]);
+    }
+
+    if (this.map?.getLayer('building_fh')) {
+      this.map?.setPaintProperty('building_fh', 'fill-color', matchExpression);
+      this.map?.setPaintProperty('building_fh', 'fill-outline-color', matchExpression);
+      this.map?.setPaintProperty('building_fh', 'fill-opacity', 0.4);
+    }
+  }
+
   setBuildingMethodCategorisedFill(methods: string[]) { 
-    methods.sort()
     // Generate Cartesian product of the methods
     const combinations = this.generateCombinations(methods);
 
@@ -167,7 +198,6 @@ export default class FloorHeightsMap {
     }
   }
 
-  // https://maplibre.org/maplibre-gl-js/docs/examples/color-switcher/
   setBuildingFloorHeightGraduatedFill(method_name: string) {
     let queryParams = {
       method_name: method_name,
@@ -317,6 +347,19 @@ export default class FloorHeightsMap {
     const filterExpression = [
         "any",
         ...methods.map(name => ["!", ["==", ["index-of", name, ["get", "method_names"]], -1]])
+    ];
+
+    this.map?.setFilter('building_fh', filterExpression);
+  }
+
+  setDatasetFilter(datasets: string[]) {
+    if (datasets.length == 0) {
+      this.map?.setFilter('building_fh', null);
+      return;
+    }
+    const filterExpression = [
+        "any",
+        ...datasets.map(name => ["!", ["==", ["index-of", name, ["get", "dataset_names"]], -1]])
     ];
 
     this.map?.setFilter('building_fh', filterExpression);
