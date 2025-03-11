@@ -14,9 +14,10 @@ const toast = useToast();
 const map = ref();
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
-const showBuildingOutlineFilters = ref(true);
+const showBuildingOutlineOptions = ref(false);
 const buildingOutlineMethodFilterOptions = ref<String[]>([]);
 const buildingOutlineMethodFilterSelection = ref<String[]>([]);
+const buildingOutlineFillSelection = ref<string | null>(null);
 
 const clickedAddressPoint = ref<AddressPoint | null>(null);
 const clickedBuilding = ref<Building | null>(null);
@@ -59,8 +60,33 @@ watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
   map.value.setBuildingOutlineVisibility(showBuildingOutlines);
 });
 
-watch(buildingOutlineMethodFilterSelection, async (methods, _) => {
-  map.value.setMethodFilter(methods);
+watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, methods]) => {
+  if (showBuildingOutlines) {
+    map.value.setMethodFilter(methods);
+  }
+});
+
+watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineFillSelection], async ([showBuildingOutlines, methods, fillOption]) => {
+  if (showBuildingOutlines) {
+    // If a method filter isn't applied, set to all values
+    if (fillOption && (!methods || methods.length === 0)) {
+      methods = buildingOutlineMethodFilterOptions.value
+    }
+    
+    if (fillOption) {
+      if (fillOption === 'Floor Height') {
+        console.log('Graduated Floor Heights fill applied:', methods);
+        map.value.setBuildingFloorHeightGraduatedFill(methods);
+      }
+      if (fillOption === 'Method') {
+        console.log('Categorised Method fill set to:', methods);
+        map.value.setBuildingMethodCategorisedFill(methods);
+      }
+
+    } else {
+      map.value.resetBuildingTiles();
+    }
+  }
 });
 
 const onAddressPointClicked = (clickedObject: any) => {
@@ -95,6 +121,12 @@ const fetchFloorMeasures = async (building_id: string) => {
     );
   }
 }
+
+// Define options for the fill dropdown
+const buildingOutlineFillOptions = ref<string[]>([
+  'Method',
+  'Floor Height',
+]);
 
 // Define locations for the menu dropdown
 const mapLocationOptions = ref<MapLocation[]>([
@@ -149,9 +181,9 @@ const updateMapLocation = (location: MapLocation) => {
             <label for="showBuildingOutlines" class="ml-2"> Building Outlines </label>
           </div>
           <ToggleButton
-            v-model="showBuildingOutlineFilters"
+            v-model="showBuildingOutlineOptions"
             onIcon="pi pi-angle-up"
-            offIcon="pi pi-angle-down"
+            offIcon="pi pi-cog"
             :pt="{
               label: (options) => ({
                 style: {
@@ -169,12 +201,23 @@ const updateMapLocation = (location: MapLocation) => {
             }"
           />
         </div>
-        <div v-if="showBuildingOutlineFilters" class="pl-10">
+        <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
+          <i class="pi pi-filter" style="font-size: 1rem"></i>
           <MultiSelect
             v-model="buildingOutlineMethodFilterSelection"
             :options="buildingOutlineMethodFilterOptions"
-            placeholder="Filter for Methods"
-            class="w-full"
+            placeholder="Filter Methods"
+            class="w-full min-w-0"
+          />
+        </div>
+        <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
+          <i class="pi pi-palette" style="font-size: 1rem"></i>
+          <Select
+            v-model="buildingOutlineFillSelection"
+            :options="buildingOutlineFillOptions"
+            placeholder="Fill Variable"
+            showClear
+            class="w-full min-w-0"
           />
         </div>
       </div>

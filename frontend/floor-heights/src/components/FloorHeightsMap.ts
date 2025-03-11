@@ -106,7 +106,133 @@ export default class FloorHeightsMap {
       padding: 60
     });
   }
-  
+
+  generateCombinations = (array: string[]) => {
+    const results: string[][] = [];
+    const totalCombinations = 1 << array.length;
+
+    for (let i = 1; i < totalCombinations; i++) {
+      const combination: string[] = [];
+      for (let j = 0; j < array.length; j++) {
+        if (i & (1 << j)) {
+          combination.push(array[j]);
+        }
+      }
+      results.push(combination);
+    }
+    return results;
+  }
+
+  generateColor = (str: string) => {
+    let hash = 0;
+    // Use a hash function for consistent colour generation
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      hash = hash & hash;
+    }
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 70%, 50%)`;
+  }
+
+  setBuildingMethodCategorisedFill(methods: string[]) { 
+    methods.sort()
+    // Generate Cartesian product of the methods
+    const combinations = this.generateCombinations(methods);
+
+    // Assign unique colour to each combination
+    const combinationColors = combinations.reduce((acc, combination) => {
+      const key = combination.join(', ');
+      acc[key] = this.generateColor(key);
+      return acc;
+    }, {} as Record<string, string>);
+
+    // Construct the match expression
+    const matchExpression = ['match', ['get', 'method_names']];
+
+    for (const [key, color] of Object.entries(combinationColors)) {
+      matchExpression.push(key, color); // Add combination and its colour
+    }
+    matchExpression.push('#FFFFFF'); // Assign a colour for empty categories
+
+    if (this.map?.getSource('building_query')) {
+      this.map?.getSource('building_query')?.setTiles([
+          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(methods.toString())}`
+        ]);
+    }
+
+    if (this.map?.getLayer('building_fh')) {
+      this.map?.setPaintProperty('building_fh', 'fill-color', matchExpression);
+      this.map?.setPaintProperty('building_fh', 'fill-outline-color', matchExpression);
+      this.map?.setPaintProperty('building_fh', 'fill-opacity', 0.4);
+    }
+  }
+
+  // https://maplibre.org/maplibre-gl-js/docs/examples/color-switcher/
+  setBuildingFloorHeightGraduatedFill(method_name: string) {
+    let queryParams = {
+      method_name: method_name,
+      // other_param: 'other value'
+    };
+
+    if (this.map?.getSource('building_query')) {
+      // this.map?.removeSource('building_query');
+      this.map?.getSource('building_query')?.setTiles([
+          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams).toString()}`
+        ]);
+    }
+
+    if (this.map?.getLayer('building_fh')) {
+      this.map?.setPaintProperty('building_fh', 'fill-color', [
+        'interpolate',
+        ['linear'],
+        ['get', 'avg_ffh'],
+        0,
+        '#FDD9CE',
+        1,
+        '#F98D6C',
+        2,
+        '#F7673B',
+        3,
+        '#F6511D',
+        4,
+        '#C43408',
+        5,
+        '#932706',
+      ]);
+      this.map?.setPaintProperty('building_fh', 'fill-outline-color', [
+        'interpolate',
+        ['linear'],
+        ['get', 'avg_ffh'],
+        0,
+        '#FDD9CE',
+        1,
+        '#F98D6C',
+        2,
+        '#F7673B',
+        3,
+        '#F6511D',
+        4,
+        '#C43408',
+        5,
+        '#932706',
+      ]);
+      this.map?.setPaintProperty('building_fh', 'fill-opacity', 0.6);
+
+    }
+  }
+
+  resetBuildingTiles(): void {
+    if (this.map?.getSource('building_query')) {
+      // this.map?.removeSource('building_query');
+      this.map?.getSource('building_query')?.setTiles([
+        `${window.location.href}maps/building_query/{z}/{x}/{y}`
+      ]);
+      this.map?.setPaintProperty('building_fh', 'fill-color', COLOR_BUILDING);
+      this.map?.setPaintProperty('building_fh', 'fill-outline-color', COLOR_BUILDING);
+      this.map?.setPaintProperty('building_fh', 'fill-opacity', 0.4);
+    }
+  }
+
   setBuildingOutlineVisibility(visible: boolean) {
     if (visible) {
       let buildingLayerDef:AddLayerObject = {
