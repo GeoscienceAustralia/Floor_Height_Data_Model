@@ -15,7 +15,6 @@ const map = ref();
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
 const showBuildingOutlineOptions = ref(false);
-// const showBuildingOutlineOptions = ref(true);
 const buildingOutlineMethodFilterOptions = ref<String[]>([]);
 const buildingOutlineMethodFilterSelection = ref<String[]>([]);
 const buildingOutlineDatasetFilterOptions = ref<String[]>([]);
@@ -88,15 +87,6 @@ watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection], async ([sho
     map.value.setDatasetFilter(datasets);
   }
 });
-
-// watch(buildingOutlineDatasetFilterSelection, async (datasets, _) => {
-//   // map.value.setDatasetFilter(methods);
-// });
-
-// watch(buildingOutlineMethodFillSelection, async (methods, _) => {
-//   map.value.setMethodGraduatedFill(methods);
-// });
-
 
 watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection, buildingOutlineMethodFilterSelection, buildingOutlineFillSelection], async ([showBuildingOutlines, datasets, methods, fillOption]) => {
   if (showBuildingOutlines) {
