@@ -6,11 +6,11 @@ import { useToast } from "primevue/usetoast";
 import { MapLocation } from "./types.ts";
 
 const toast = useToast();
-const isPanelVisible = ref(false);
+const showMenu = ref(false);
 
 // Toggle the menu visibility
-const onClick = () => {
-  isPanelVisible.value = !isPanelVisible.value;
+const setMenuVisibility = () => {
+  showMenu.value = !showMenu.value;
 };
 
 const props = defineProps<{
@@ -83,11 +83,11 @@ const fetchGeoJSON = async () => {
 <template>
   <div id="menu" class="flex flex-col gap-2 flex-1">
     <Button
-      @click="onClick"
-      :icon="isPanelVisible ? 'pi pi-times' : 'pi pi-bars'"
+      @click="setMenuVisibility"
+      :icon="showMenu ? 'pi pi-times' : 'pi pi-bars'"
       class="p-button self-end"
     />
-    <Panel v-if="isPanelVisible" class="flex-none">
+    <Panel v-if="showMenu" class="flex-none">
       <template #header>
         <div
           class="flex items-center gap-2"
@@ -106,7 +106,7 @@ const fetchGeoJSON = async () => {
         </div>
       </template>
     </Panel>
-    <Panel v-if="isPanelVisible" class="flex-none">
+    <Panel v-if="showMenu" class="flex-none">
       <template #header>
         <div
           class="flex items-center gap-2"
