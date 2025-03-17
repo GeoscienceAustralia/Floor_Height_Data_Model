@@ -1,4 +1,4 @@
-import { Map, LngLatBoundsLike, AddLayerObject, NavigationControl } from 'maplibre-gl';
+import { Map, LngLatBoundsLike, AddLayerObject, NavigationControl, VectorTileSource} from 'maplibre-gl';
 
 import { Point } from 'geojson';
 
@@ -148,7 +148,7 @@ export default class FloorHeightsMap {
     const matchExpression = ['match', ['get', field]].concat(colorMap);
 
     if (this.map?.getSource('building_query')) {
-      this.map?.getSource('building_query')?.setTiles([
+      (this.map?.getSource('building_query') as VectorTileSource)?.setTiles([
           `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
         ]);
     }
@@ -179,7 +179,7 @@ export default class FloorHeightsMap {
     const matchExpression = ['interpolate', ['linear'], ['get', 'avg_ffh']].concat(colorMap);
   
     if (this.map?.getSource('building_query')) {
-      this.map?.getSource('building_query')?.setTiles([
+      (this.map?.getSource('building_query') as VectorTileSource)?.setTiles([
           `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
         ]);
     }
@@ -193,7 +193,7 @@ export default class FloorHeightsMap {
 
   resetBuildingTiles(): void {
     if (this.map?.getSource('building_query')) {
-      this.map?.getSource('building_query')?.setTiles([
+      (this.map?.getSource('building_query') as VectorTileSource)?.setTiles([
         `${window.location.href}maps/building_query/{z}/{x}/{y}`
       ]);
       this.map?.setPaintProperty('building_fh', 'fill-color', COLOR_BUILDING);

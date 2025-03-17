@@ -178,7 +178,7 @@ const fetchFloorMeasures = async (building_id: string) => {
   }
 }
 
-const fetchGraduatedLegendValues = async (methods: string[], datasets: string[]) => {
+const fetchGraduatedLegendValues = async (methods: String[], datasets: String[]) => {
   let queryParams: Record<string, string> = {
     method_filter: methods.toString(),
     dataset_filter: datasets.toString(),
@@ -197,7 +197,7 @@ const fetchGraduatedLegendValues = async (methods: string[], datasets: string[])
   }
 };
 
-const fetchCategorisedLegendValues = async (table: string, methods: string[], datasets: string[]) => {
+const fetchCategorisedLegendValues = async (table: string, methods: String[], datasets: String[]) => {
   let queryParams: Record<string, string> = {
     method_filter: methods.toString(),
     dataset_filter: datasets.toString(),
@@ -245,20 +245,20 @@ const createGraduatedLegendObject = (colorMap: (number | string)[]) => {
 };
 
 // Define options for the fill dropdown
-const buildingOutlineFillOptions = ref<string[]>([
+const buildingOutlineFillOptions: string[] = [
   'Floor Height',
   'Dataset',
   'Method',
-]);
+];
 
 // Define locations for the menu dropdown
-const mapLocationOptions = ref<MapLocation[]>([
+const mapLocationOptions: MapLocation[] = [
   { label: 'Wagga Wagga, NSW', coordinates: [147.360, -35.120] },
   { label: 'Launceston, TAS', coordinates: [147.144, -41.434] },
   { label: 'Tweed Heads, NSW', coordinates: [153.537, -28.205] },
-]);
+];
 
-const selectedMapLocation = ref<MapLocation | null>(null);
+const selectedMapLocation: MapLocation | null = null;
 
 // Method to update the map location
 const updateMapLocation = (location: MapLocation) => {
