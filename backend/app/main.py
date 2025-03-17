@@ -13,14 +13,15 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from geojson_pydantic import FeatureCollection, Feature
-from sqlalchemy import select
+from sqlalchemy import select, any_
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql import func
 
 from app.log import LogConfig
 dictConfig(LogConfig().dict())
 logger = logging.getLogger("floorheights")
 
-from app.schemas import FloorMeasureResponse
+from app.schemas import FloorMeasureResponse, GraduatedLegendResponse
 from floorheights.datamodel.models import (
     AddressPoint,
     Building,
@@ -232,6 +233,109 @@ def list_methods(
         r[0] 
         for r in db.query(Method.name).order_by(Method.name)
     ]
+
+
+@app.get(
+    "/api/legend-graduated-values/",
+    response_model=GraduatedLegendResponse,
+)
+def get_legend_graduated_values(
+    method_filter: str | None = "",
+    dataset_filter: str | None = "",
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication = Depends(authenticated)
+):
+    if Authentication:
+        pass
+
+    # Parse query parameters into sorted lists
+    if method_filter:
+        method_filter_list = [x.strip() for x in method_filter.split(',')]
+        method_filter_list.sort()
+    if dataset_filter:
+        dataset_filter_list = [x.strip() for x in dataset_filter.split(',')]
+        dataset_filter_list.sort()
+
+    subquery = (
+        db.query(
+            func.avg(FloorMeasure.height).label("avg_ffh"),
+        )
+        .select_from(Building)
+        .join(FloorMeasure)
+        .join(Method, FloorMeasure.method)
+        .join(Dataset, FloorMeasure.datasets)
+        .filter(
+            (method_filter == "" or Method.name.like(any_(method_filter_list))),
+            (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
+        )
+        .group_by(Building.id)
+    ).subquery()
+
+    query = db.query(
+        func.min(subquery.c.avg_ffh),
+        func.max(subquery.c.avg_ffh),
+    )
+
+    return GraduatedLegendResponse(min=query[0][0], max=query[0][1])
+
+
+@app.get(
+    "/api/legend-categorised-values/{table}",
+    response_model=list[str],
+)
+def get_legend_categorised_values(
+    table=str,
+    method_filter: str | None = "",
+    dataset_filter: str | None = "",
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication = Depends(authenticated)
+):
+    if Authentication:
+        pass
+
+    if table == "dataset":
+        field = Dataset.name
+    elif table == "method":
+        field = Method.name
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid table parameter: {table}")
+
+    # Parse query parameters into sorted lists
+    if method_filter:
+        method_filter_list = [x.strip() for x in method_filter.split(',')]
+        method_filter_list.sort()
+    if dataset_filter:
+        dataset_filter_list = [x.strip() for x in dataset_filter.split(',')]
+        dataset_filter_list.sort()
+
+    query = (
+        db.query(
+            func.string_agg(func.distinct(field), ', ').label("values")
+        )
+        .select_from(Building)
+        .join(FloorMeasure)
+        .join(Method, FloorMeasure.method)
+        .join(Dataset, FloorMeasure.datasets)
+        .distinct()
+        .filter(
+            (method_filter == "" or Method.name.like(any_(method_filter_list))),
+            (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
+        )
+        .group_by(Building.id)
+    )
+
+    # Sort results
+    result_list = [result.values for result in query.all()]
+    sorted_result_list = sorted(
+        result_list,
+        key=lambda x: (
+            len(x.split(", ")) != 1, # Single items first
+            x.lower() # Then alphabetically
+        )
+    )
+
+    return sorted_result_list
+
 
 @app.get(
     "/api/datasets/",

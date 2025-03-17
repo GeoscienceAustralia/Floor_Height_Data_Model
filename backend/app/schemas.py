@@ -12,3 +12,8 @@ class FloorMeasureBase(BaseModel):
 class FloorMeasureResponse(FloorMeasureBase):
     method: str
     datasets: list[str]
+
+
+class GraduatedLegendResponse(BaseModel):
+    min: float | None = None
+    max: float | None = None

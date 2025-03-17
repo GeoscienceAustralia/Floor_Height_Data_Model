@@ -40,12 +40,12 @@ BEGIN
     WHERE outline && ST_Transform(ST_TileEnvelope(z, x, y), 4326)
       -- Optional query parameters
       AND (
-        NOT jsonb_exists(query_params, 'method_name') 
-        OR m.name = ANY(string_to_array(query_params->>'method_name', ','))
+        NOT jsonb_exists(query_params, 'method_filter') 
+        OR m.name = ANY(string_to_array(query_params->>'method_filter', ','))
       )
       AND (
-        NOT jsonb_exists(query_params, 'dataset_name') 
-        OR d.name = ANY(string_to_array(query_params->>'dataset_name', ','))
+        NOT jsonb_exists(query_params, 'dataset_filter') 
+        OR d.name = ANY(string_to_array(query_params->>'dataset_filter', ','))
       )
     GROUP BY building.id
   ) as tile WHERE geom IS NOT NULL;

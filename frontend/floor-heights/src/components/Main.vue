@@ -8,10 +8,13 @@ import FloorHeightsMap from './FloorHeightsMap';
 import {FloorMeasure, AddressPoint, Building, MapLocation} from './types';
 import FloorMeasureComponent from './FloorMeasureComponent.vue';
 import MenuComponent from './MenuComponent.vue';
+import CategorisedLegendComponent from './CategorisedLegendComponent.vue';
+import GraduatedLegendComponent from './GraduatedLegendComponent.vue';
 
 const toast = useToast();
 
 const map = ref();
+const showLegend = ref(false);
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
 const showBuildingOutlineOptions = ref(false);
@@ -19,12 +22,16 @@ const buildingOutlineMethodFilterOptions = ref<String[]>([]);
 const buildingOutlineMethodFilterSelection = ref<String[]>([]);
 const buildingOutlineDatasetFilterOptions = ref<String[]>([]);
 const buildingOutlineDatasetFilterSelection = ref<String[]>([]);
-const buildingOutlineFillSelection = ref<string | null>(null);
+const buildingOutlineFillSelection = ref<String | null>(null);
 
 const clickedAddressPoint = ref<AddressPoint | null>(null);
 const clickedBuilding = ref<Building | null>(null);
-
 const clickedFloorMeasures = ref<FloorMeasure[]>([]);
+
+const legendType = ref<String | null>(null);
+const legendObject = ref<Record<string, string>>({});
+const buildingGraduatedFillLegend = ref<String[]>([]);
+const buildingCategorisedFillLegend = ref<String[]>([]);
 
 onMounted(async () => {
   clickedAddressPoint.value = null;
@@ -74,6 +81,9 @@ watch(showAddressPoints, async (showAddressPoints, _) => {
 
 watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
   map.value.setBuildingOutlineVisibility(showBuildingOutlines);
+  if (!showBuildingOutlines) {
+    showLegend.value = false;
+  }
 });
 
 watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, methods]) => {
@@ -106,20 +116,31 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
     
     if (fillOption) {
       if (fillOption === 'Floor Height') {
-        console.log('Graduated Floor Heights fill applied:', methods, datasets);
-        map.value.setBuildingFloorHeightGraduatedFill(methods, datasets);
+        await fetchGraduatedLegendValues(methods, datasets);
+        const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value.min, buildingGraduatedFillLegend.value.max)
+        map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap);
+        createGraduatedLegendObject(colorMap)
+        legendType.value = "graduated";
       }
       if (fillOption == 'Dataset') {
-        console.log("Categorised Dataset fill set to:", methods, datasets);
-        map.value.setBuildingDatasetCategorisedFill(methods, datasets);
+        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets);
+        const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
+        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'dataset_names');
+        createCategorisedLegendObject(colorMap)
+        legendType.value = "categorised";
       }
       if (fillOption === 'Method') {
-        console.log('Categorised Method fill set to:', methods, datasets);
-        map.value.setBuildingMethodCategorisedFill(methods, datasets);
+        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets);
+        const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
+        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'method_names');
+        createCategorisedLegendObject(colorMap)
+        legendType.value = "categorised";
       }
+      showLegend.value = true;
 
     } else {
       map.value.resetBuildingTiles();
+      showLegend.value = false;
     }
   }
 });
@@ -156,6 +177,72 @@ const fetchFloorMeasures = async (building_id: string) => {
     );
   }
 }
+
+const fetchGraduatedLegendValues = async (methods: string[], datasets: string[]) => {
+  let queryParams: Record<string, string> = {
+    method_filter: methods.toString(),
+    dataset_filter: datasets.toString(),
+  };
+
+  try {
+    buildingGraduatedFillLegend.value = (await axios.get<String[]>(`api/legend-graduated-values/?${new URLSearchParams(queryParams)}`)).data;
+  } catch (error) {
+    console.error(`Failed to fetch legend values`);
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: "Failed to fetch legend values",
+      life: 3000,
+    });
+  }
+};
+
+const fetchCategorisedLegendValues = async (table: string, methods: string[], datasets: string[]) => {
+  let queryParams: Record<string, string> = {
+    method_filter: methods.toString(),
+    dataset_filter: datasets.toString(),
+  };
+
+  try {
+    buildingCategorisedFillLegend.value = (await axios.get<String[]>(`api/legend-categorised-values/${table}?${new URLSearchParams(queryParams)}`)).data;
+  } catch (error) {
+    console.error(`Failed to fetch legend values`);
+    toast.add({
+      severity: "error",
+      summary: "Error",
+      detail: "Failed to fetch legend values",
+      life: 3000,
+    });
+  }
+};
+
+const createCategorisedLegendObject = (colorMap: string[]) => {
+  const legend: Record<string, string> = {};
+
+  for (let i = 0; i < colorMap.length - 1; i += 2) {
+    const label = colorMap[i];
+    const color = colorMap[i + 1];
+    if (label && color) {
+      legend[label] = color;
+    }
+  }
+
+  legendObject.value = legend;
+};
+
+const createGraduatedLegendObject = (colorMap: (number | string)[]) => {
+  const legend: Record<number, string> = {};
+
+  for (let i = 0; i < colorMap.length - 1; i += 2) {
+    const label = colorMap[i] as number;
+    const color = colorMap[i + 1] as string;
+    if (label && color) {
+      legend[label] = color;
+    }
+  }
+
+  legendObject.value = legend;
+};
 
 // Define options for the fill dropdown
 const buildingOutlineFillOptions = ref<string[]>([
@@ -268,6 +355,17 @@ const updateMapLocation = (location: MapLocation) => {
       </div>
     </Panel>
 
+    <Panel v-if=showLegend class="flex-none">
+    <template #header>
+      <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+        <i class="pi pi-list" style="font-size: 1rem"></i>
+        <span class="font-bold">Legend</span>
+      </div>
+    </template>
+    <CategorisedLegendComponent v-if="legendType === 'categorised'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+    <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+    </Panel>
+   
     <Panel class="flex-none" v-if="clickedAddressPoint">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
@@ -285,7 +383,6 @@ const updateMapLocation = (location: MapLocation) => {
           <div> {{ clickedAddressPoint.gnaf_id }} </div>
         </div>
       </div>
-      
     </Panel>
 
     <Panel class="flex-none" v-if="clickedBuilding">

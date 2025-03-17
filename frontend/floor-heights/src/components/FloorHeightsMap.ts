@@ -14,6 +14,8 @@ const TILESERVER_LAYER_DETAILS = [
 
 const COLOR_ADDRESS_POINT: string = '#3887BE';
 const COLOR_BUILDING: string = '#F6511D';
+const COLOR_BUILDING_GRADIENT_START: string = '#FFBEA8';
+const COLOR_BUILDING_GRADIENT_END: string = '#FF4B14';
 const COLOR_ADDRESS_BUILDING_LINK: string = '#3887BE';
 
 export default class FloorHeightsMap {
@@ -107,22 +109,6 @@ export default class FloorHeightsMap {
     });
   }
 
-  generateCombinations = (array: string[]) => {
-    const results: string[][] = [];
-    const totalCombinations = 1 << array.length;
-
-    for (let i = 1; i < totalCombinations; i++) {
-      const combination: string[] = [];
-      for (let j = 0; j < array.length; j++) {
-        if (i & (1 << j)) {
-          combination.push(array[j]);
-        }
-      }
-      results.push(combination);
-    }
-    return results;
-  }
-
   generateColor = (str: string) => {
     let hash = 0;
     // Use a hash function for consistent colour generation
@@ -134,33 +120,36 @@ export default class FloorHeightsMap {
     return `hsl(${hue}, 70%, 50%)`;
   }
 
-  setBuildingDatasetCategorisedFill(methods: string[], datasets: string[]) { 
-    let queryParams = {
-      method_name: methods,
-      dataset_name: datasets
-    };
-
-    // Generate Cartesian product of the datasets
-    const combinations = this.generateCombinations(datasets);
-
-    // Assign unique colour to each combination
-    const combinationColors = combinations.reduce((acc, combination) => {
-      const key = combination.join(', ');
-      acc[key] = this.generateColor(key);
+  generateCategorisedColorMap = (attributes: string[]) => {
+    // Generate a unique colour for each attribute
+    const attributeColors = attributes.reduce((acc, attribute) => {
+      acc[attribute] = this.generateColor(attribute); // Assign a colour based on the attribute name
       return acc;
     }, {} as Record<string, string>);
-
-    // Construct the match expression
-    const matchExpression = ['match', ['get', 'dataset_names']];
-
-    for (const [key, color] of Object.entries(combinationColors)) {
-      matchExpression.push(key, color); // Add combination and its colour
+  
+    // Construct the colour map
+    const colorMap = [];
+  
+    for (const [attribute, color] of Object.entries(attributeColors)) {
+      colorMap.push(attribute, color); // Add attribute and its assigned colour
     }
-    matchExpression.push('#FFFFFF'); // Assign a colour for empty categories
+  
+    colorMap.push('#FFFFFF'); // Assign a colour for empty categories
+  
+    return colorMap;
+  }
+
+  setBuildingCategorisedFill(methods: string[], datasets: string[], colorMap: string[], field: string) {
+    let queryParams: Record<string, string> = {
+      method_filter: methods.toString(),
+      dataset_filter: datasets.toString(),
+    };
+  
+    const matchExpression = ['match', ['get', field]].concat(colorMap);
 
     if (this.map?.getSource('building_query')) {
       this.map?.getSource('building_query')?.setTiles([
-          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams).toString()}`
+          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
         ]);
     }
 
@@ -171,98 +160,39 @@ export default class FloorHeightsMap {
     }
   }
 
-  setBuildingMethodCategorisedFill(methods: string[], datasets: string[]) {
-    let queryParams = {
-      method_name: methods,
-      dataset_name: datasets
+  generateGraduatedColorMap = (min: number, max: number) => {
+    const colorMap = [
+      min,
+      COLOR_BUILDING_GRADIENT_START,
+      max,
+      COLOR_BUILDING_GRADIENT_END
+    ]
+    return colorMap;
+  }
+
+  setBuildingFloorHeightGraduatedFill(methods: string[], datasets: string[], colorMap: string[]) {
+    let queryParams: Record<string, string> = {
+      method_filter: methods.toString(),
+      dataset_filter: datasets.toString(),
     };
 
-    // Generate Cartesian product of the methods
-    const combinations = this.generateCombinations(methods);
-
-    // Assign unique colour to each combination
-    const combinationColors = combinations.reduce((acc, combination) => {
-      const key = combination.join(', ');
-      acc[key] = this.generateColor(key);
-      return acc;
-    }, {} as Record<string, string>);
-
-    // Construct the match expression
-    const matchExpression = ['match', ['get', 'method_names']];
-
-    for (const [key, color] of Object.entries(combinationColors)) {
-      matchExpression.push(key, color); // Add combination and its colour
-    }
-    matchExpression.push('#FFFFFF'); // Assign a colour for empty categories
-    
+    const matchExpression = ['interpolate', ['linear'], ['get', 'avg_ffh']].concat(colorMap);
+  
     if (this.map?.getSource('building_query')) {
       this.map?.getSource('building_query')?.setTiles([
-          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams).toString()}`
+          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
         ]);
     }
 
     if (this.map?.getLayer('building_fh')) {
       this.map?.setPaintProperty('building_fh', 'fill-color', matchExpression);
       this.map?.setPaintProperty('building_fh', 'fill-outline-color', matchExpression);
-      this.map?.setPaintProperty('building_fh', 'fill-opacity', 0.4);
-    }
-  }
-
-  setBuildingFloorHeightGraduatedFill(methods: string[], datasets: string[]) {
-    let queryParams = {
-      method_name: methods,
-      dataset_name: datasets
-    };
-
-    if (this.map?.getSource('building_query')) {
-      this.map?.getSource('building_query')?.setTiles([
-          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams).toString()}`
-        ]);
-    }
-
-    if (this.map?.getLayer('building_fh')) {
-      this.map?.setPaintProperty('building_fh', 'fill-color', [
-        'interpolate',
-        ['linear'],
-        ['get', 'avg_ffh'],
-        0,
-        '#FDD9CE',
-        1,
-        '#F98D6C',
-        2,
-        '#F7673B',
-        3,
-        '#F6511D',
-        4,
-        '#C43408',
-        5,
-        '#932706',
-      ]);
-      this.map?.setPaintProperty('building_fh', 'fill-outline-color', [
-        'interpolate',
-        ['linear'],
-        ['get', 'avg_ffh'],
-        0,
-        '#FDD9CE',
-        1,
-        '#F98D6C',
-        2,
-        '#F7673B',
-        3,
-        '#F6511D',
-        4,
-        '#C43408',
-        5,
-        '#932706',
-      ]);
-      this.map?.setPaintProperty('building_fh', 'fill-opacity', 0.6);
-
+      this.map?.setPaintProperty('building_fh', 'fill-opacity', 0.7);
     }
   }
 
   resetBuildingTiles(): void {
     if (this.map?.getSource('building_query')) {
-      // this.map?.removeSource('building_query');
       this.map?.getSource('building_query')?.setTiles([
         `${window.location.href}maps/building_query/{z}/{x}/{y}`
       ]);
