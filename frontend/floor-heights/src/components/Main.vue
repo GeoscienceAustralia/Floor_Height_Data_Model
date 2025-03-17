@@ -42,27 +42,14 @@ onMounted(async () => {
 
   try {
     buildingOutlineMethodFilterOptions.value = (await axios.get<String[]>(`api/methods/`)).data;
-  } catch (error) {
-    console.error(`Failed to fetch methods`);
-    toast.add(
-      {
-        severity: 'error',
-        summary: 'Error',
-        detail: 'Failed to fetch method list',
-        life: 3000
-      }
-    );
-  }
-
-  try {
     buildingOutlineDatasetFilterOptions.value = (await axios.get<String[]>(`api/datasets/`)).data;
   } catch (error) {
-    console.error(`Failed to fetch datasets`);
+    console.error(`Failed to fetch filter options`);
     toast.add(
       {
         severity: 'error',
         summary: 'Error',
-        detail: 'Failed to fetch dataset list',
+        detail: 'Failed to fetch filter options',
         life: 3000
       }
     );
