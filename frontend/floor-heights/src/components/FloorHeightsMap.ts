@@ -110,13 +110,20 @@ export default class FloorHeightsMap {
   }
 
   generateColor = (str: string) => {
-    let hash = 0;
-    // Use a hash function for consistent colour generation
-    for (let i = 0; i < str.length; i++) {
-      hash = str.charCodeAt(i) + ((hash << 5) - hash);
-      hash = hash & hash;
-    }
-    const hue = Math.abs(hash % 360);
+    const elements = str.split(',');
+  
+    const elementHashes = elements.map((element) => {
+      let hash = 0;
+      for (let i = 0; i < element.length; i++) {
+        hash = element.charCodeAt(i) + ((hash << 5) - hash);
+        hash = hash & hash;
+      }
+      return Math.abs(hash);
+    });
+  
+    const combinedHash = elementHashes.reduce((acc, h) => acc ^ h, 0);
+    const hue = combinedHash % 360;
+  
     return `hsl(${hue}, 70%, 50%)`;
   }
 
