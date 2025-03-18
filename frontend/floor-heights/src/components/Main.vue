@@ -203,15 +203,13 @@ const fetchCategorisedLegendValues = async (table: string, methods: String[], da
   }
 };
 
-const createCategorisedLegendObject = (colorMap: string[]) => {
+const createCategorisedLegendObject = (colorMap: (number | string)[]) => {
   const legend: Record<string, string> = {};
 
   for (let i = 0; i < colorMap.length - 1; i += 2) {
-    const label = colorMap[i];
-    const color = colorMap[i + 1];
-    if (label && color) {
-      legend[label] = color;
-    }
+    const label = colorMap[i] as number;
+    const color = colorMap[i + 1]  as string;
+    legend[label] = color;
   }
 
   legendObject.value = legend;
@@ -223,9 +221,7 @@ const createGraduatedLegendObject = (colorMap: (number | string)[]) => {
   for (let i = 0; i < colorMap.length - 1; i += 2) {
     const label = colorMap[i] as number;
     const color = colorMap[i + 1] as string;
-    if (label && color) {
-      legend[label] = color;
-    }
+    legend[label] = color;
   }
 
   legendObject.value = legend;
