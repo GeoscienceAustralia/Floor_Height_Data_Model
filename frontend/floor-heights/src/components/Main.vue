@@ -121,7 +121,7 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
     if (fillOption) {
       if (fillOption === 'Floor Height') {
         const locationBounds = generateLocationBounds(selectedMapLocation)      
-        await fetchGraduatedLegendValues(methods, datasets);
+        await fetchGraduatedLegendValues(methods, datasets, locationBounds);
         const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value.min, buildingGraduatedFillLegend.value.max)
         map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
         createGraduatedLegendObject(colorMap)
@@ -129,7 +129,7 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
       }
       if (fillOption == 'Dataset') {
         const locationBounds = generateLocationBounds(selectedMapLocation)
-        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets);
+        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
         const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
         map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'dataset_names', locationBounds);
         createCategorisedLegendObject(colorMap)
@@ -137,7 +137,7 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
       }
       if (fillOption === 'Method') {
         const locationBounds = generateLocationBounds(selectedMapLocation)
-        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets);
+        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
         const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
         map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'method_names', locationBounds);
         createCategorisedLegendObject(colorMap)
@@ -185,10 +185,11 @@ const fetchFloorMeasures = async (building_id: string) => {
   }
 }
 
-const fetchGraduatedLegendValues = async (methods: String[], datasets: String[]) => {
+const fetchGraduatedLegendValues = async (methods: String[], datasets: String[], locationBounds: LngLatBoundsLike) => {
   let queryParams: Record<string, string> = {
     method_filter: methods.toString(),
     dataset_filter: datasets.toString(),
+    bbox: locationBounds.toString()
   };
 
   try {
@@ -204,10 +205,11 @@ const fetchGraduatedLegendValues = async (methods: String[], datasets: String[])
   }
 };
 
-const fetchCategorisedLegendValues = async (table: string, methods: String[], datasets: String[]) => {
+const fetchCategorisedLegendValues = async (table: string, methods: String[], datasets: String[], locationBounds: LngLatBoundsLike) => {
   let queryParams: Record<string, string> = {
     method_filter: methods.toString(),
     dataset_filter: datasets.toString(),
+    bbox: locationBounds.toString()
   };
 
   try {

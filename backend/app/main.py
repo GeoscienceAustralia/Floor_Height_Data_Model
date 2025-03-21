@@ -242,6 +242,7 @@ def list_methods(
 def get_legend_graduated_values(
     method_filter: str | None = "",
     dataset_filter: str | None = "",
+    bbox: str | None = "",
     db: sqlalchemy.orm.Session = Depends(get_db),
     Authentication = Depends(authenticated)
 ):
@@ -255,6 +256,8 @@ def get_legend_graduated_values(
     if dataset_filter:
         dataset_filter_list = [x.strip() for x in dataset_filter.split(',')]
         dataset_filter_list.sort()
+    if bbox:
+        bbox_list = [x.strip() for x in bbox.split(',')]
 
     subquery = (
         db.query(
@@ -267,6 +270,7 @@ def get_legend_graduated_values(
         .filter(
             (method_filter == "" or Method.name.like(any_(method_filter_list))),
             (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
+            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 4326), Building.outline)),
         )
         .group_by(Building.id)
     ).subquery()
@@ -287,6 +291,7 @@ def get_legend_categorised_values(
     table=str,
     method_filter: str | None = "",
     dataset_filter: str | None = "",
+    bbox: str | None = "",
     db: sqlalchemy.orm.Session = Depends(get_db),
     Authentication = Depends(authenticated)
 ):
@@ -307,6 +312,8 @@ def get_legend_categorised_values(
     if dataset_filter:
         dataset_filter_list = [x.strip() for x in dataset_filter.split(',')]
         dataset_filter_list.sort()
+    if bbox:
+        bbox_list = [x.strip() for x in bbox.split(',')]
 
     query = (
         db.query(
@@ -320,6 +327,7 @@ def get_legend_categorised_values(
         .filter(
             (method_filter == "" or Method.name.like(any_(method_filter_list))),
             (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
+            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 4326), Building.outline)),
         )
         .group_by(Building.id)
     )
