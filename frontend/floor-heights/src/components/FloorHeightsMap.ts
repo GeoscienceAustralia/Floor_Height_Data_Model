@@ -1,4 +1,4 @@
-import { Map, LngLatBoundsLike, AddLayerObject, NavigationControl, VectorTileSource} from 'maplibre-gl';
+import { Map, LngLat, LngLatBoundsLike, AddLayerObject, NavigationControl, VectorTileSource} from 'maplibre-gl';
 
 import { Point } from 'geojson';
 
@@ -27,13 +27,13 @@ export default class FloorHeightsMap {
     this.emitter = new EventEmitter();
   }
 
-  createMap() {
+  createMap(mapCenter: LngLat) {
     return new Promise((resolve) => {
       this.map = new Map({
         container: 'map',
         style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
         // style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-        center: [147.360, -35.120],
+        center: mapCenter,
         zoom: 12,
         maxZoom: 22,
         minZoom: 3

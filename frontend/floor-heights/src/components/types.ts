@@ -1,5 +1,7 @@
 // Type definitions for client
 
+import { LngLat } from "maplibre-gl";
+
 interface AddressPoint {
   id: string;
   gnaf_id: string;
@@ -24,7 +26,7 @@ interface FloorMeasure {
 
 interface MapLocation {
   label: string;
-  coordinates: [number, number];
+  coordinates: LngLat;
 }
 
 export type {

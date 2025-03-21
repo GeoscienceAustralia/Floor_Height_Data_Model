@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import axios from 'axios';
+import { LngLat } from 'maplibre-gl';
 import { ref, onMounted, watch } from 'vue';
 import Panel from 'primevue/panel';
 import ScrollPanel from 'primevue/scrollpanel';
@@ -38,7 +39,7 @@ onMounted(async () => {
   clickedBuilding.value = null;
 
   map.value = new FloorHeightsMap();
-  await map.value.createMap();
+  await map.value.createMap(selectedMapLocation.value.coordinates);
 
   try {
     buildingOutlineMethodFilterOptions.value = (await axios.get<String[]>(`api/methods/`)).data;
@@ -236,12 +237,13 @@ const buildingOutlineFillOptions: string[] = [
 
 // Define locations for the menu dropdown
 const mapLocationOptions: MapLocation[] = [
-  { label: 'Wagga Wagga, NSW', coordinates: [147.360, -35.120] },
-  { label: 'Launceston, TAS', coordinates: [147.144, -41.434] },
-  { label: 'Tweed Heads, NSW', coordinates: [153.537, -28.205] },
+  { label: 'Wagga Wagga, NSW', coordinates: new LngLat(147.360, -35.120) },
+  { label: 'Launceston, TAS', coordinates: new LngLat(147.144, -41.434) },
+  { label: 'Tweed Heads, NSW', coordinates: new LngLat(153.537, -28.205) },
 ];
 
-const selectedMapLocation: MapLocation | null = null;
+const selectedMapLocation = ref<MapLocation>(mapLocationOptions[0]);
+
 
 // Method to update the map location
 const updateMapLocation = (location: MapLocation) => {
