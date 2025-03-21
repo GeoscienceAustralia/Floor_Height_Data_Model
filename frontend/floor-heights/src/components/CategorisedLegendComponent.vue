@@ -14,7 +14,7 @@ defineProps({
 </script>
 
 <template>
-  <span class="label">{{ fillOption }}</span>
+  <span class="subheading">{{ fillOption }}</span>
   <div v-for="(color, label) in legendObject" :key="label" class="legend-item">
     <span class="color-box" :style="{ backgroundColor: color }"></span>
     <span class="label">{{ label }}</span>
@@ -25,7 +25,7 @@ defineProps({
 .legend-item {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .color-box {
@@ -36,7 +36,11 @@ defineProps({
   opacity: 0.8;
 }
 
-.label {
+.subheading {
   font-size: 14px;
+}
+
+.label {
+  font-size: 12px;
 }
 </style>

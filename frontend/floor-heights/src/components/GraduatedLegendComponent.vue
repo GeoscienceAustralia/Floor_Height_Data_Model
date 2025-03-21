@@ -14,7 +14,7 @@ defineProps({
 </script>
 
 <template>
-  <span class="label">{{ fillOption }} (m)</span>
+  <span class="subheading">{{ fillOption }} (m)</span>
   <div class="legend-item">
     <div
       class="gradient-box"
@@ -41,7 +41,7 @@ defineProps({
   width: 100%;
   height: 15px;
   border-radius: 4px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
   opacity: 0.8;
 }
 
@@ -51,7 +51,11 @@ defineProps({
   width: 100%;
 }
 
-.label {
+.subheading {
   font-size: 14px;
+}
+
+.label {
+  font-size: 12px;
 }
 </style>

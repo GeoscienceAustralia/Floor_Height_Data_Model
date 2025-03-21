@@ -352,17 +352,6 @@ const updateMapLocation = (location: MapLocation) => {
       </div>
     </Panel>
 
-    <Panel v-if=showLegend class="flex-none">
-    <template #header>
-      <div class="flex items-center gap-2" style="margin-bottom: -10px;">
-        <i class="pi pi-list" style="font-size: 1rem"></i>
-        <span class="font-bold">Legend</span>
-      </div>
-    </template>
-    <CategorisedLegendComponent v-if="legendType === 'categorised'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-    <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-    </Panel>
-   
     <Panel class="flex-none" v-if="clickedAddressPoint">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
@@ -464,7 +453,22 @@ const updateMapLocation = (location: MapLocation) => {
       </div>
     </Panel>
   </div>
+
   <MenuComponent v-model:modelValue="selectedMapLocation" :options="mapLocationOptions" @change="updateMapLocation"/>
+
+  <div id="legend">
+  <Panel v-if=showLegend class="flex-none">
+    <template #header>
+      <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+        <i class="pi pi-list" style="font-size: 1rem"></i>
+        <span class="font-bold">Legend</span>
+      </div>
+    </template>
+    <CategorisedLegendComponent v-if="legendType === 'categorised'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+    <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+  </Panel>
+  </div>
+
 </template>
 
 <style scoped>
@@ -480,6 +484,14 @@ const updateMapLocation = (location: MapLocation) => {
   max-height: calc(100vh - 40px);
   width: 400px;
   z-index: 1; /* Ensures it stays above the map */
+}
+
+#legend {
+  position: absolute;
+  bottom: 20px;
+  right: 50px;
+  width: 370px;
+  z-index: 1;
 }
 
 .subheading {
