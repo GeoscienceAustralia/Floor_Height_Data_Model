@@ -36,7 +36,7 @@ export default class FloorHeightsMap {
         center: mapCenter,
         zoom: 12,
         maxZoom: 22,
-        minZoom: 3
+        minZoom: 11
       });
       
       this.map.on('add', async () => {
@@ -146,10 +146,11 @@ export default class FloorHeightsMap {
     return colorMap;
   }
 
-  setBuildingCategorisedFill(methods: string[], datasets: string[], colorMap: string[], field: string) {
+  setBuildingCategorisedFill(methods: string[], datasets: string[], colorMap: string[], field: string, locationBounds: LngLatBoundsLike) {
     let queryParams: Record<string, string> = {
       method_filter: methods.toString(),
       dataset_filter: datasets.toString(),
+      bbox: locationBounds.toString()
     };
   
     const matchExpression = ['match', ['get', field]].concat(colorMap);
@@ -177,10 +178,11 @@ export default class FloorHeightsMap {
     return colorMap;
   }
 
-  setBuildingFloorHeightGraduatedFill(methods: string[], datasets: string[], colorMap: string[]) {
+  setBuildingFloorHeightGraduatedFill(methods: string[], datasets: string[], colorMap: string[], locationBounds: LngLatBoundsLike) {
     let queryParams: Record<string, string> = {
       method_filter: methods.toString(),
       dataset_filter: datasets.toString(),
+      bbox: locationBounds.toString()
     };
 
     const matchExpression = ['interpolate', ['linear'], ['get', 'avg_ffh']].concat(colorMap);

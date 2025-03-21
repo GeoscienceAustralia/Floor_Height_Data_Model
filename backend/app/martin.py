@@ -47,6 +47,15 @@ BEGIN
         NOT jsonb_exists(query_params, 'dataset_filter') 
         OR d.name = ANY(string_to_array(query_params->>'dataset_filter', ','))
       )
+      AND (
+        NOT jsonb_exists(query_params, 'bbox') 
+        OR building.outline @ ST_MakeEnvelope (
+            (string_to_array(query_params->>'bbox', ','))[1]::float,
+            (string_to_array(query_params->>'bbox', ','))[2]::float,
+            (string_to_array(query_params->>'bbox', ','))[3]::float,
+            (string_to_array(query_params->>'bbox', ','))[4]::float,
+            4326)
+      )
     GROUP BY building.id
   ) as tile WHERE geom IS NOT NULL;
 

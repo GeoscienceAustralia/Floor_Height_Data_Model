@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import axios from 'axios';
-import { LngLat } from 'maplibre-gl';
+import { LngLatBoundsLike, LngLat } from 'maplibre-gl';
 import { ref, onMounted, watch } from 'vue';
 import Panel from 'primevue/panel';
 import ScrollPanel from 'primevue/scrollpanel';
@@ -33,6 +33,22 @@ const legendType = ref<String | null>(null);
 const legendObject = ref<Record<string, string>>({});
 const buildingGraduatedFillLegend = ref<String[]>([]);
 const buildingCategorisedFillLegend = ref<String[]>([]);
+
+// Define options for the fill dropdown
+const buildingOutlineFillOptions: string[] = [
+  'Floor Height',
+  'Dataset',
+  'Method',
+];
+
+// Define locations for the menu dropdown
+const mapLocationOptions: MapLocation[] = [
+  { label: 'Wagga Wagga, NSW', coordinates: new LngLat(147.360, -35.120) },
+  { label: 'Launceston, TAS', coordinates: new LngLat(147.144, -41.434) },
+  { label: 'Tweed Heads, NSW', coordinates: new LngLat(153.537, -28.205) },
+];
+
+const selectedMapLocation = ref<MapLocation>(mapLocationOptions[0]);
 
 onMounted(async () => {
   clickedAddressPoint.value = null;
@@ -86,7 +102,7 @@ watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection], async ([sho
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection], async ([showBuildingOutlines, methods, datasets, fillOption]) => {
+watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection, selectedMapLocation], async ([showBuildingOutlines, methods, datasets, fillOption, selectedMapLocation]) => {
   if (showBuildingOutlines) {
     // Sort so that the dropdown options match the API request
     methods.sort()
@@ -104,23 +120,26 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
     
     if (fillOption) {
       if (fillOption === 'Floor Height') {
+        const locationBounds = generateLocationBounds(selectedMapLocation)      
         await fetchGraduatedLegendValues(methods, datasets);
         const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value.min, buildingGraduatedFillLegend.value.max)
-        map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap);
+        map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
         createGraduatedLegendObject(colorMap)
         legendType.value = "graduated";
       }
       if (fillOption == 'Dataset') {
+        const locationBounds = generateLocationBounds(selectedMapLocation)
         await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets);
         const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
-        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'dataset_names');
+        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'dataset_names', locationBounds);
         createCategorisedLegendObject(colorMap)
         legendType.value = "categorised";
       }
       if (fillOption === 'Method') {
+        const locationBounds = generateLocationBounds(selectedMapLocation)
         await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets);
         const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
-        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'method_names');
+        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'method_names', locationBounds);
         createCategorisedLegendObject(colorMap)
         legendType.value = "categorised";
       }
@@ -228,24 +247,15 @@ const createGraduatedLegendObject = (colorMap: (number | string)[]) => {
   legendObject.value = legend;
 };
 
-// Define options for the fill dropdown
-const buildingOutlineFillOptions: string[] = [
-  'Floor Height',
-  'Dataset',
-  'Method',
-];
+const generateLocationBounds = (location: MapLocation) => {
+  // Roughly generate a bounding box around the location
+  const locationBounds: LngLatBoundsLike = [
+    [location.coordinates.lng - 0.7, location.coordinates.lat - 0.7],
+    [location.coordinates.lng + 0.7, location.coordinates.lat + 0.7]
+  ];
+  return locationBounds;
+};
 
-// Define locations for the menu dropdown
-const mapLocationOptions: MapLocation[] = [
-  { label: 'Wagga Wagga, NSW', coordinates: new LngLat(147.360, -35.120) },
-  { label: 'Launceston, TAS', coordinates: new LngLat(147.144, -41.434) },
-  { label: 'Tweed Heads, NSW', coordinates: new LngLat(153.537, -28.205) },
-];
-
-const selectedMapLocation = ref<MapLocation>(mapLocationOptions[0]);
-
-
-// Method to update the map location
 const updateMapLocation = (location: MapLocation) => {
   if (map) {
     map.value.setCenter(location.coordinates);
