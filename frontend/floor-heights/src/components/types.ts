@@ -1,5 +1,7 @@
 // Type definitions for client
 
+import { LngLat } from "maplibre-gl";
+
 interface AddressPoint {
   id: string;
   gnaf_id: string;
@@ -22,8 +24,14 @@ interface FloorMeasure {
   datasets: string[];
 }
 
+interface MapLocation {
+  label: string;
+  coordinates: LngLat;
+}
+
 export type {
   AddressPoint,
   Building,
-  FloorMeasure
+  FloorMeasure,
+  MapLocation
 };

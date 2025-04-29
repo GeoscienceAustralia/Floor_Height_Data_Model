@@ -1,13 +1,13 @@
 {
   "author": "Unnamed",
   "title": "floorheights",
-  "date": "2024-10-22T22:59:40.470Z",
+  "date": "2024-12-02T00:09:57.366Z",
   "tables": [
     {
       "id": 0,
       "name": "address_point",
-      "x": -717.9705810546875,
-      "y": -189.86691284179688,
+      "x": -723.303914388021,
+      "y": -188.53357950846345,
       "fields": [
         {
           "name": "id",
@@ -38,7 +38,7 @@
           "values": []
         },
         {
-          "name": "address",
+          "name": "gnaf_id",
           "type": "TEXT",
           "default": "",
           "check": "",
@@ -48,7 +48,36 @@
           "increment": false,
           "comment": "",
           "id": 2,
-          "size": 256
+          "size": "",
+          "values": []
+        },
+        {
+          "name": "address",
+          "type": "TEXT",
+          "default": "",
+          "check": "",
+          "primary": false,
+          "unique": false,
+          "notNull": true,
+          "increment": false,
+          "comment": "",
+          "id": 3,
+          "size": "",
+          "values": []
+        },
+        {
+          "name": "geocode_type",
+          "type": "TEXT",
+          "default": "",
+          "check": "",
+          "primary": false,
+          "unique": false,
+          "notNull": false,
+          "increment": false,
+          "comment": "",
+          "id": 4,
+          "size": "",
+          "values": []
         }
       ],
       "comment": "",
@@ -91,7 +120,7 @@
           "values": []
         },
         {
-          "name": "height_ahd",
+          "name": "min_height_ahd",
           "type": "DECIMAL",
           "default": "",
           "check": "",
@@ -101,6 +130,18 @@
           "increment": false,
           "comment": "",
           "id": 2
+        },
+        {
+          "name": "max_height_ahd",
+          "type": "DECIMAL",
+          "default": "",
+          "check": "",
+          "primary": false,
+          "unique": false,
+          "notNull": true,
+          "increment": false,
+          "comment": "",
+          "id": 3
         }
       ],
       "comment": "",
@@ -111,8 +152,8 @@
     {
       "id": 2,
       "name": "address_point_building_association",
-      "x": -703.7985229492186,
-      "y": 16.823211669921932,
+      "x": -714.4651896158854,
+      "y": 111.68035452706465,
       "fields": [
         {
           "name": "address_point_id",
@@ -151,8 +192,8 @@
     {
       "id": 3,
       "name": "dataset",
-      "x": 253.78564453125,
-      "y": -112.78161621093744,
+      "x": 263.1189778645835,
+      "y": -111.44828287760407,
       "fields": [
         {
           "name": "id",
@@ -216,8 +257,8 @@
     {
       "id": 4,
       "name": "method",
-      "x": 253.5499267578125,
-      "y": -259.49981689453125,
+      "x": 264.21659342447947,
+      "y": -260.8331502278646,
       "fields": [
         {
           "name": "id",
@@ -255,8 +296,8 @@
     {
       "id": 5,
       "name": "floor_measure",
-      "x": -69.8958740234375,
-      "y": -258.4377288818359,
+      "x": -68.56254069010424,
+      "y": -259.7710622151692,
       "fields": [
         {
           "name": "id",
@@ -326,6 +367,33 @@
           "comment": "",
           "id": 4,
           "size": "",
+          "values": [],
+          "isArray": false
+        },
+        {
+          "name": "accuracy_measure",
+          "type": "DECIMAL",
+          "default": "",
+          "check": "",
+          "primary": false,
+          "unique": false,
+          "notNull": true,
+          "increment": false,
+          "comment": "",
+          "id": 5
+        },
+        {
+          "name": "aux_info",
+          "type": "JSON",
+          "default": "",
+          "check": "",
+          "primary": false,
+          "unique": false,
+          "notNull": false,
+          "increment": false,
+          "comment": "",
+          "id": 6,
+          "size": "",
           "values": []
         },
         {
@@ -338,33 +406,10 @@
           "notNull": true,
           "increment": false,
           "comment": "",
-          "id": 5
-        },
-        {
-          "name": "accuracy_measure",
-          "type": "DECIMAL",
-          "default": "",
-          "check": "",
-          "primary": false,
-          "unique": false,
-          "notNull": true,
-          "increment": false,
-          "comment": "",
-          "id": 6
-        },
-        {
-          "name": "aux_info",
-          "type": "JSON",
-          "default": "",
-          "check": "",
-          "primary": false,
-          "unique": false,
-          "notNull": false,
-          "increment": false,
-          "comment": "",
           "id": 7,
           "size": "",
-          "values": []
+          "values": [],
+          "isArray": false
         }
       ],
       "comment": "",
@@ -375,8 +420,8 @@
     {
       "id": 6,
       "name": "floor_measure_dataset_association",
-      "x": -61.102050781249886,
-      "y": 148.9810333251953,
+      "x": -65.7687174479164,
+      "y": 144.3143666585285,
       "fields": [
         {
           "name": "floor_measure_id",
@@ -470,14 +515,14 @@
       "id": 4
     },
     {
-      "startTableId": 5,
-      "startFieldId": 4,
-      "endTableId": 6,
-      "endFieldId": 0,
-      "cardinality": "one_to_many",
+      "startTableId": 6,
+      "startFieldId": 0,
+      "endTableId": 5,
+      "endFieldId": 4,
+      "cardinality": "many_to_one",
       "updateConstraint": "No action",
       "deleteConstraint": "No action",
-      "name": "floor_measure_dataset_group_id_fk",
+      "name": "floor_measure_dataset_association_floor_measure_id_fk",
       "id": 5
     }
   ],
