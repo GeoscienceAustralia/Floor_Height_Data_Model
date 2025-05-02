@@ -122,6 +122,7 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
       if (fillOption === 'Floor Height') {
         const locationBounds = generateLocationBounds(selectedMapLocation)      
         await fetchGraduatedLegendValues(methods, datasets, locationBounds);
+        // @ts-ignore
         const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value.min, buildingGraduatedFillLegend.value.max)
         map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
         createGraduatedLegendObject(colorMap)
@@ -305,14 +306,14 @@ const updateMapLocation = (location: MapLocation) => {
             onIcon="pi pi-angle-up"
             offIcon="pi pi-cog"
             :pt="{
-              label: (options) => ({
+              label: (_) => ({
                 style: {
                   'width': 0,
                   'height': 0,
                   'visibility': 'hidden'
                 },
               }),
-              root: (options) => ({
+              root: (_) => ({
                 style: {
                   'background-color':'unset',
                   'border':'unset'
@@ -415,7 +416,7 @@ const updateMapLocation = (location: MapLocation) => {
       class="flex shrink flex-col min-h-0"
       v-if="clickedBuilding && clickedFloorMeasures.length != 0"
       :pt="{
-        contentContainer: (options) => ({
+        contentContainer: (_) => ({
             id: 'myPanelHeader',
             class: [
                 'flex-1',
@@ -424,7 +425,7 @@ const updateMapLocation = (location: MapLocation) => {
                 'min-h-0'
             ]
         }),
-        content: (options) => ({
+        content: (_) => ({
             id: 'myPanelContent',
             class: [
                 'flex-1',
