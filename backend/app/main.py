@@ -5,9 +5,11 @@ import secrets
 import uuid
 from contextlib import asynccontextmanager
 from logging.config import dictConfig
+from urllib.parse import urljoin
 
 import geoalchemy2
 import geoalchemy2.functions
+import httpx
 import sqlalchemy
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -16,6 +18,9 @@ from geojson_pydantic import FeatureCollection, Feature
 from sqlalchemy import select, any_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import func
+from starlette.background import BackgroundTask
+from starlette.requests import Request
+from starlette.responses import StreamingResponse
 
 from app.log import LogConfig
 dictConfig(LogConfig().dict())
@@ -443,3 +448,38 @@ def export_geojson(
             raise HTTPException(status_code=500, detail="An unexpected error occurred.")
 
     return StreamingResponse(generate(), media_type="application/json")
+
+
+MAPS_HOST = os.getenv("MAPS_HOST")
+if not MAPS_HOST:
+    raise ValueError("Environment variable 'MAPS_HOST' is not set.")
+MAPS_SERVER = httpx.AsyncClient(base_url=MAPS_HOST)
+
+
+@app.get("/api/maps/{path:path}", response_class=StreamingResponse)
+async def map_proxy(
+        request: Request,
+        path: str,
+        Authentication = Depends(authenticated),
+    ):
+    """
+    Proxy for the map service
+    """
+    print(f"Request path: {path}")
+    if Authentication:
+        pass
+    # Construct the target URL
+    # a valid url should be something like:
+    # http://martin:3000/building_query/13/7450/4949
+    target_url = urljoin(MAPS_HOST, f"{path}")
+
+    rp_req = MAPS_SERVER.build_request(
+        request.method, target_url, headers=request.headers.raw, content=await request.body()
+    )
+    rp_resp = await MAPS_SERVER.send(rp_req, stream=True)
+    return StreamingResponse(
+        rp_resp.aiter_raw(),
+        status_code=rp_resp.status_code,
+        headers=rp_resp.headers,
+        background=BackgroundTask(rp_resp.aclose),
+    )
