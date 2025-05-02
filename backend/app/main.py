@@ -20,7 +20,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import func
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import StreamingResponse
 
 from app.log import LogConfig
 dictConfig(LogConfig().dict())
