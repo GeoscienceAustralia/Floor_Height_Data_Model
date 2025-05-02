@@ -465,8 +465,7 @@ async def map_proxy(
     """
     Proxy for the map service
     """
-    if Authentication:
-        pass
+    # Authentication is enforced via Depends(authenticated)
     # Construct the target URL
     # a valid url should be something like:
     # http://martin:3000/building_query/13/7450/4949
