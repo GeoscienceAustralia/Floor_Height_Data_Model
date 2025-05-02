@@ -17,11 +17,6 @@ export default defineConfig({
         '/api/': {
           target: 'http://backend-dev:8080/',
           changeOrigin: false,
-        },
-        '/maps/': {
-          target: 'http://martin:3000/',
-          changeOrigin: false,
-          rewrite: (path) => path.replace(/^\/maps/, ''),
         }
       },
     }
