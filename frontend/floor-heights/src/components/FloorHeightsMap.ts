@@ -49,7 +49,7 @@ export default class FloorHeightsMap {
           this.map?.addSource(layerName, {
               type: 'vector',
               tiles: [
-                  `${window.location.href}maps/${layerName}/{z}/{x}/{y}`
+                  `${window.location.href}api/maps/${layerName}/{z}/{x}/{y}`
               ],
               minzoom: 0,
               maxzoom: 22,
@@ -157,7 +157,7 @@ export default class FloorHeightsMap {
 
     if (this.map?.getSource('building_query')) {
       (this.map?.getSource('building_query') as VectorTileSource)?.setTiles([
-          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
+          `${window.location.href}api/maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
         ]);
     }
 
@@ -189,7 +189,7 @@ export default class FloorHeightsMap {
   
     if (this.map?.getSource('building_query')) {
       (this.map?.getSource('building_query') as VectorTileSource)?.setTiles([
-          `${window.location.href}maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
+          `${window.location.href}api/maps/building_query/{z}/{x}/{y}?${new URLSearchParams(queryParams)}`
         ]);
     }
 
@@ -203,7 +203,7 @@ export default class FloorHeightsMap {
   resetBuildingTiles(): void {
     if (this.map?.getSource('building_query')) {
       (this.map?.getSource('building_query') as VectorTileSource)?.setTiles([
-        `${window.location.href}maps/building_query/{z}/{x}/{y}`
+        `${window.location.href}api/maps/building_query/{z}/{x}/{y}`
       ]);
       this.map?.setPaintProperty('building_fh', 'fill-color', COLOR_BUILDING);
       this.map?.setPaintProperty('building_fh', 'fill-outline-color', COLOR_BUILDING);
