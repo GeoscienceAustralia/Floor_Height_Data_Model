@@ -465,7 +465,6 @@ async def map_proxy(
     """
     Proxy for the map service
     """
-    print(f"Request path: {path}")
     if Authentication:
         pass
     # Construct the target URL
