@@ -12,7 +12,6 @@ on:
         required: true
         type: string
       dockerfile-file-name:
-        required: true
         type: string
         default: Dockerfile
     secrets:
