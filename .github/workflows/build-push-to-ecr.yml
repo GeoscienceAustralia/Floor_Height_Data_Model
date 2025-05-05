@@ -1,0 +1,85 @@
+# resuable workflow to build and push docker image to ECR
+name: Docker build and push to ECR
+on:
+  workflow_call:
+    inputs:
+      # path in the repository where the dockerfile is located
+      path:
+        required: true
+        type: string
+      # name of the docker image, also the name of the ECR repo
+      image-name:
+        required: true
+        type: string
+    secrets:
+      aws-access-key-id:
+        required: true
+      aws-secret-access-key:
+        required: true
+      aws-region:
+        required: true
+      aws-account-id:
+        required: true
+
+jobs:
+  build-and-push:
+    name: Build Docker image and push to ECR
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Get Git release version
+      id: get_git_release
+      run: |
+        git fetch --tags
+        GIT_RELEASE_VERSION=$(git tag --sort version:refname | tail -1)
+        if [ "${GIT_RELEASE_VERSION}" == "" ] ; then
+          GIT_RELEASE_VERSION="v0.0.1"
+        fi
+        echo "git_release=${GIT_RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Build Docker image
+      run: |
+        cd ${{ inputs.path }}
+        docker build -t ${{ inputs.image-name }} .
+
+    - name: Tag Docker image
+      id: tag_docker_image
+      env:
+        GIT_RELEASE: ${{ steps.get_git_release.outputs.git_release }}
+        GIT_EVENT_NAME:  ${{ github.event_name }}
+        PR_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        echo "Latest release: ${GIT_RELEASE}"
+        COMMIT_SHA=$(echo ${PR_COMMIT_SHA:0:7})
+        if [ ${GIT_EVENT_NAME} == "pull_request" ] ; then
+          NEW_TAG="${GIT_RELEASE}-${COMMIT_SHA}-$(date +%s)"
+        else
+          NEW_TAG="${GIT_RELEASE}"
+        fi
+        docker tag ${{ inputs.image-name }} ${{ inputs.image-name }}:${NEW_TAG}
+        echo "::set-output name=NEW_TAG::${NEW_TAG}"
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with: 
+        aws-access-key-id: ${{ secrets.aws-access-key-id }}
+        aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+        aws-region: ${{ secrets.aws-region }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      run: aws ecr get-login-password --region ${{ secrets.aws-region }} | docker login --username AWS --password-stdin ${{ secrets.aws-account-id }}.dkr.ecr.${{ secrets.aws-region }}.amazonaws.com
+
+    - name: Tag and Push Docker image to ECR
+      env: 
+        NEW_TAG: ${{ steps.tag_docker_image.outputs.NEW_TAG }}
+      run: |
+        docker tag ${{ inputs.image-name }}:${NEW_TAG} ${{ secrets.aws-account-id }}.dkr.ecr.${{ secrets.aws-region }}.amazonaws.com/${{ inputs.image-name }}:${NEW_TAG}
+        docker push ${{ secrets.aws-account-id }}.dkr.ecr.${{ secrets.aws-region }}.amazonaws.com/${{ inputs.image-name }}:${NEW_TAG}
+        docker tag ${{ inputs.image-name }}:${NEW_TAG} ${{ secrets.aws-account-id }}.dkr.ecr.${{ secrets.aws-region }}.amazonaws.com/${{ inputs.image-name }}:${{ github.sha }}
+        docker push ${{ secrets.aws-account-id }}.dkr.ecr.${{ secrets.aws-region }}.amazonaws.com/${{ inputs.image-name }}:${{ github.sha }}
+        docker tag ${{ inputs.image-name }}:${NEW_TAG} ${{ secrets.aws-account-id }}.dkr.ecr.${{ secrets.aws-region }}.amazonaws.com/${{ inputs.image-name }}:latest
+        docker push ${{ secrets.aws-account-id }}.dkr.ecr.${{ secrets.aws-region }}.amazonaws.com/${{ inputs.image-name }}:latest

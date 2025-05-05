@@ -1,0 +1,24 @@
+name: Build on push develop
+
+on:
+  push:
+    branches:
+      - feature-ci-cd
+
+jobs:
+  build-and-push:
+    name: API Build and push develop to staging ECR
+    strategy:
+      matrix:
+        build-details:
+          - {path: backend, image-name: floor-heights/backend}
+          - {path: frontend, image-name: floor-heights/frontend}
+    uses: ./.github/workflows/build-push-to-ecr.yml
+    with:
+      path: ${{ matrix.build-details.path }}
+      image-name: ${{ matrix.build-details.image-name }}
+    secrets:
+      aws-access-key-id: ${{ secrets.STAGING_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.STAGING_SECRET_ACCESS_KEY }}
+      aws-region: ${{ secrets.STAGING_AWS_REGION }}
+      aws-account-id: ${{ secrets.STAGING_AWS_ACCOUNT_ID }}
