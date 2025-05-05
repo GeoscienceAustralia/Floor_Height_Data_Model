@@ -12,7 +12,7 @@ jobs:
       matrix:
         build-details:
           - {path: ., dockerfile-file-name: backend/Dockerfile ,image-name: floor-heights/backend}
-          - {path: frontend, image-name: floor-heights/frontend}
+          - {path: frontend, dockerfile-file-name: Dockerfile, image-name: floor-heights/frontend}
     uses: ./.github/workflows/build-push-to-ecr.yml
     with:
       path: ${{ matrix.build-details.path }}
