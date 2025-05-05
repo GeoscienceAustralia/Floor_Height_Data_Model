@@ -11,6 +11,10 @@ on:
       image-name:
         required: true
         type: string
+      dockerfile-file-name:
+        required: true
+        type: string
+        default: Dockerfile
     secrets:
       aws-access-key-id:
         required: true
@@ -43,7 +47,7 @@ jobs:
     - name: Build Docker image
       run: |
         cd ${{ inputs.path }}
-        docker build -t ${{ inputs.image-name }} .
+        docker build -t ${{ inputs.image-name }} -f ${{inputs.dockerfile-file-name}} .
 
     - name: Tag Docker image
       id: tag_docker_image
