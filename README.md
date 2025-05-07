@@ -23,7 +23,7 @@ Build the docker images
 
 Startup the database (Postgres) container
 
-    docker compose up
+    docker compose --profile dev up
 
 Apply all database migrations, this will create the data model tables in the database.
 
@@ -33,6 +33,17 @@ Some dummy data can then be added using the following commands (for test purpose
 
     docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-address-point
     docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-building
+
+## Dev and Prod docker compose profiles
+
+The 'dev' profile is to support development. It uses the vite dev server to host the frontend application which supports hot reloads of code. The frontend code is mounted into the container so that any changes made locally will be immediately reflected in the application. Similarly the backend is configured to run with the `--reload` argument and has the backend code mounted into the container. Any local changes made to the backend code will cause the server to reload making changed available immediately. Use the following command to start the dev mode containers, it will be available at [http://localhost:5173/](http://localhost:5173/) .
+
+    docker compose --profile dev up
+
+The 'prod' profile supports testing a production build of the application. The frontend code is built, and copied into an nginx container where it is hosted as static html and javascript files. The backend code is copied into the container during the image build process. When these containers are run they only rely on code within the built containers so to mimic the production hosting environment. Any local changes made will require the images to be rebuilt, and restarted before any changes are available. Use the following to test the prod mode, it will be available at [http://localhost/](http://localhost/) .
+
+    docker compose --profile prod build
+    docker compose --profile prod up
 
 ## Using as a library
 

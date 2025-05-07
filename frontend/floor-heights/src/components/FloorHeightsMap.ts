@@ -297,6 +297,7 @@ export default class FloorHeightsMap {
         ...methods.map(name => ["!", ["==", ["index-of", name, ["get", "method_names"]], -1]])
     ];
 
+    // @ts-ignore
     this.map?.setFilter('building_fh', filterExpression);
   }
 
@@ -310,6 +311,7 @@ export default class FloorHeightsMap {
         ...datasets.map(name => ["!", ["==", ["index-of", name, ["get", "dataset_names"]], -1]])
     ];
 
+    // @ts-ignore
     this.map?.setFilter('building_fh', filterExpression);
   }
 
