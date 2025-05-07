@@ -718,8 +718,9 @@ def ingest_main_method(
     method_df = method_df.set_index(["id"])
 
     # Create aux_info json column
-    fields = ["building_id", "height", "storey", "accuracy_measure"]
-    aux_info_df = method_df.drop(columns=fields, axis=1).copy()
+    aux_info_df = method_df.drop(
+        columns=["building_id", "height", "storey", "accuracy_measure"], axis=1
+    ).copy()
     aux_info_df = aux_info_df.replace(np.nan, None)
 
     method_df["aux_info"] = aux_info_df.apply(

@@ -639,14 +639,14 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
 
 
 def insert_floor_measure_dataset_association(
-    session: Session, nexis_dataset_id: uuid.UUID, floor_measure_inserted_ids: list
+    session: Session, dataset_id: uuid.UUID, floor_measure_inserted_ids: list
 ) -> None:
-    """Insert records into the floor_measure_dataset_association table from a
-    NEXIS Dataset record id and a list of FloorMeasure ids
+    """Insert records into the floor_measure_dataset_association table from a Dataset
+    record id and a list of FloorMeasure ids
     """
     # Parse list of ids into a dict for inserting into the association table
     floor_measure_dataset_values = [
-        {"floor_measure_id": row.id, "dataset_id": nexis_dataset_id}
+        {"floor_measure_id": row, "dataset_id": dataset_id}
         for row in floor_measure_inserted_ids
     ]
     session.execute(
