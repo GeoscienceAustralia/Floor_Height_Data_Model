@@ -1,11 +1,13 @@
 import click
 import geopandas as gpd
+import json
+import numpy as np
 import pandas as pd
 import rasterio
 import uuid
 from pathlib import Path
 from shapely.geometry import box
-from sqlalchemy import Table, Numeric, UUID, select
+from sqlalchemy import Table, Numeric, UUID, JSON, select
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -298,7 +300,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 
 
 @click.command()
-@click.option("-i", "--input-nexis", required=True, type=click.File(), help="Input NEXIS CSV file path.")  # fmt: skip
+@click.option("-i", "--input-nexis", required=True, type=str, help="Input NEXIS CSV file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
 @click.option("--clip-to-cadastre", is_flag=True, help="Clip measure points by the cadastre dataset extents. This will speed up processing, but won't join measures outside the extent of the cadastre.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
@@ -320,7 +322,7 @@ def ingest_nexis_method(input_nexis, clip_to_cadastre, flatten_cadastre, join_la
     try:
         nexis_gdf = etl.read_nexis_csv(input_nexis, 4283)
     except Exception as error:
-        raise click.exceptions.FileError(input_nexis.name, error)
+        raise click.exceptions.FileError(input_nexis, error)
 
     session = SessionLocal()
     with session.begin():
@@ -677,6 +679,91 @@ def ingest_validation_method(
 
 
 @click.command()
+@click.option("-i", "--input-json", required=True, type=click.File(), help="Input main methodology floor height JSON file path.")  # fmt: skip
+@click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
+@click.option("--method-name", type=str, help="Method name.")
+@click.option("--dataset-name", type=str, help="Dataset name.")
+@click.option("--dataset-desc", type=str, help="Dataset description.")
+@click.option("--dataset-src", type=str, help="Dataset source.")
+def ingest_main_method(
+    input_json, ffh_field, method_name, dataset_name, dataset_desc, dataset_src
+):
+    """Ingest main methodology floor height JSON"""
+
+    click.echo("Loading Floor Height JSON...")
+    try:
+        json_data = json.load(open(input_json.name))
+        method_df = pd.DataFrame(json_data["buildings"])
+    except Exception as error:
+        raise click.exceptions.FileError(input_json.name, error)
+
+    method_df = method_df.rename(
+        columns={
+            "id": "building_id",
+            ffh_field: "height",
+        }
+    )
+
+    method_df = method_df[~method_df["height"].isna()]
+
+    # TODO: remove these constants when these fields are populated in the JSON
+    method_df["accuracy_measure"] = 0
+    method_df["storey"] = 0
+
+    # Make method input column names lower case and remove special characters
+    method_df.columns = method_df.columns.str.lower().str.replace(
+        r"\W+", "", regex=True
+    )
+    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
+    method_df = method_df.set_index(["id"])
+
+    # Create aux_info json column
+    aux_info_df = method_df.drop(
+        columns=["building_id", "height", "storey", "accuracy_measure"], axis=1
+    ).copy()
+    aux_info_df = aux_info_df.replace(np.nan, None)
+
+    method_df["aux_info"] = aux_info_df.apply(
+        lambda row: json.dumps(row.to_dict()), axis=1
+    )
+    method_df = method_df.drop(columns=aux_info_df.columns, axis=1)
+
+    session = SessionLocal()
+    with session.begin():
+        conn = session.connection()
+        click.echo("Inserting records into floor_measure table...")
+
+        method_id = etl.get_or_create_method_id(session, method_name)
+        method_dataset_id = etl.get_or_create_dataset_id(
+            session, dataset_name, dataset_desc, dataset_src
+        )
+
+        method_df["method_id"] = method_id
+
+        method_df.to_sql(
+            "floor_measure",
+            conn,
+            schema="public",
+            if_exists="append",
+            index=True,
+            dtype={
+                "id": UUID,
+                "building_id": UUID,
+                "method_id": UUID,
+                "height": Numeric,
+                "aux_info": JSON,
+            },
+            method=etl.psql_insert_copy,
+        )
+
+        etl.insert_floor_measure_dataset_association(
+            session, method_dataset_id, method_df.index.tolist()
+        )
+
+    click.echo("Main methodology ingestion complete")
+
+
+@click.command()
 @click.option("-o", "--output-file", required=True, type=str, help="Output OGR dataset file path.")  # fmt: skip
 @click.option("--normalise_aux_info", is_flag=True, help="Normalise the aux_info field into separate columns.")  # fmt: skip
 def export_ogr_file(output_file: str, normalise_aux_info: bool):
@@ -702,6 +789,7 @@ cli.add_command(ingest_buildings)
 cli.add_command(join_address_buildings)
 cli.add_command(ingest_nexis_method)
 cli.add_command(ingest_validation_method)
+cli.add_command(ingest_main_method)
 cli.add_command(export_ogr_file)
 
 
