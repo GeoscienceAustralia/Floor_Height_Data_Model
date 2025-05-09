@@ -4,6 +4,7 @@ import os
 import secrets
 import uuid
 from contextlib import asynccontextmanager
+from io import BytesIO
 from logging.config import dictConfig
 from urllib.parse import urljoin
 
@@ -31,6 +32,7 @@ from floorheights.datamodel.models import (
     Building,
     Dataset,
     FloorMeasure,
+    FloorMeasureImage,
     Method,
     SessionLocal,
 )
@@ -416,6 +418,63 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse geometry as JSON: {e}")
         raise ValueError("Invalid geometry data encountered.") from e
+
+
+@app.get(
+    "/api/pano-image-ids/{building_id}",
+    response_model=list[uuid.UUID],
+)
+def get_pano_image_ids(
+    building_id: str,
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication=Depends(authenticated),
+):
+    if Authentication:
+        pass
+    uuid_id = uuid.UUID(building_id)
+
+    query = (
+        select(FloorMeasureImage.id)
+        .select_from(FloorMeasureImage)
+        .join(FloorMeasure)
+        .join(Building)
+        .filter(Building.id == uuid_id)
+    )
+
+    results = db.execute(query).all()
+
+    return [r[0] for r in results]
+
+
+@app.get(
+    "/api/pano-image/{image_id}",
+    response_class=StreamingResponse,
+)
+def get_pano_image(
+    image_id: str,
+    db: sqlalchemy.orm.Session = Depends(get_db),
+    Authentication=Depends(authenticated),
+):
+    if Authentication:
+        pass
+    uuid_id = uuid.UUID(image_id)
+
+    query = (
+        select(FloorMeasureImage.image_data)
+        .filter(FloorMeasureImage.id == uuid_id)
+        .filter(FloorMeasureImage.type == "panorama")
+    )
+    result = db.execute(query).fetchone()
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Image not found.")
+
+    image_data = result[0]
+
+    return StreamingResponse(
+        BytesIO(image_data),
+        media_type="image/jpeg",
+    )
 
 
 @app.get("/api/geojson/", response_class=StreamingResponse)
