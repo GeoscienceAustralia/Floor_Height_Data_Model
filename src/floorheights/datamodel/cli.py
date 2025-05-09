@@ -7,7 +7,7 @@ import rasterio
 import uuid
 from pathlib import Path
 from shapely.geometry import box
-from sqlalchemy import Table, Numeric, UUID, JSON, select
+from sqlalchemy import Table, String, Numeric, UUID, JSON, LargeBinary, select
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -763,6 +763,100 @@ def ingest_main_method(
 
 
 @click.command()
+@click.option("--pano-path", type=click.Path(), help="Path to folder containing panorama images.")  # fmt: skip
+@click.option("--lidar-path", type=click.Path(), help="Path to folder containing LIDAR images.")  # fmt: skip
+def ingest_main_method_images(
+    pano_path,
+    lidar_path,
+):
+    """Ingest main methodology images"""
+    if not pano_path and not lidar_path:
+        raise click.UsageError(
+            "Either --pano-path or --lidar-path must be provided to ingest images."
+        )
+
+    def image_to_bytearray(image_path):
+        with open(image_path, "rb") as f:
+            return f.read()
+
+    from floorheights.datamodel.models import FloorMeasure, Dataset
+
+    session = SessionLocal()
+    with session.begin():
+        conn = session.connection()
+        click.echo("Selecting records from floor_measure table...")
+
+        # Get (main methodology) floor_measure IDs, and filenames for images
+        select_query = (
+            select(
+                FloorMeasure.id,
+                FloorMeasure.aux_info,
+            )
+            .select_from(FloorMeasure)
+            .join(Dataset, FloorMeasure.datasets)
+            .filter(Dataset.name == "Main Methodology")
+        )
+        measure_df = pd.read_sql(select_query, conn)
+        measure_df = pd.concat(
+            [measure_df, pd.json_normalize(measure_df.pop("aux_info"))], axis=1
+        )
+        measure_df = measure_df.drop_duplicates(subset=["frame_filename"])
+
+        # Ingest panorama images
+        if pano_path:
+            click.echo("Ingesting panorama images...")
+            # Associate Method IDs with panorama image paths
+            pano_df = measure_df[["frame_filename"]].copy()
+
+            # Get pano filenames by globbing the pano_path
+            pano_df["pano_path"] = pano_df.frame_filename.apply(
+                lambda filename: list(Path(pano_path).glob(f"{Path(filename).stem}*"))
+            )
+            # Normalise so that each row contains one filepath
+            pano_df = pano_df.explode("pano_path")
+            pano_df = pano_df[pano_df["pano_path"].notna()]
+
+            # Add ID and additional fields
+            pano_df["id"] = [uuid.uuid4() for _ in range(len(pano_df.index))]
+            pano_df = pano_df.set_index(["id"], drop=True)
+            pano_df["filename"] = pano_df.pano_path.apply(lambda path: Path(path).name)
+            pano_df["type"] = "panorama"
+
+            # Join the floor_measure_ids
+            pano_df = pano_df.join(
+                measure_df[["id", "frame_filename"]].set_index("frame_filename"),
+                on="frame_filename",
+            )
+            pano_df = pano_df.rename(columns={"id": "floor_measure_id"})
+
+            # Create byte arrays of the images
+            pano_df["image_data"] = pano_df.pano_path.apply(
+                lambda filename: image_to_bytearray(filename)
+            )
+
+            pano_df = pano_df.drop(columns=["frame_filename", "pano_path"], axis=1)
+
+            pano_df.to_sql(
+                "floor_measure_image",
+                conn,
+                schema="public",
+                if_exists="append",
+                index=True,
+                dtype={
+                    "id": UUID,
+                    "image_data": LargeBinary,
+                    "floor_measure_id": UUID,
+                    "type": String,
+                },
+            )
+
+        if lidar_path:
+            raise NotImplementedError
+
+    click.echo("Image ingestion complete")
+
+
+@click.command()
 @click.option("-o", "--output-file", required=True, type=str, help="Output OGR dataset file path.")  # fmt: skip
 @click.option("--normalise_aux_info", is_flag=True, help="Normalise the aux_info field into separate columns.")  # fmt: skip
 def export_ogr_file(output_file: str, normalise_aux_info: bool):
@@ -789,6 +883,7 @@ cli.add_command(join_address_buildings)
 cli.add_command(ingest_nexis_method)
 cli.add_command(ingest_validation_method)
 cli.add_command(ingest_main_method)
+cli.add_command(ingest_main_method_images)
 cli.add_command(export_ogr_file)
 
 
