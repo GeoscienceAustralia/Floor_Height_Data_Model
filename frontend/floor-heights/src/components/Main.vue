@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import axios from 'axios';
 import { LngLatBoundsLike, LngLat } from 'maplibre-gl';
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import Panel from 'primevue/panel';
 import ScrollPanel from 'primevue/scrollpanel';
 import { useToast } from "primevue/usetoast";
@@ -280,6 +280,31 @@ const updateMapLocation = (newLocation: MapLocation) => {
     selectedMapLocation.value = newLocation;
   }
 };
+
+const filteredFloorMeasures = computed(() => {
+  // If no filters are selected, return all floor measures
+  if (
+    !buildingOutlineMethodFilterSelection.value.length &&
+    !buildingOutlineDatasetFilterSelection.value.length
+  ) {
+    return clickedFloorMeasures.value;
+  }
+
+  // Filter floor measures based on the selected methods and datasets
+  return clickedFloorMeasures.value.filter((measure) => {
+    const matchesMethod =
+      !buildingOutlineMethodFilterSelection.value.length ||
+      buildingOutlineMethodFilterSelection.value.includes(measure.method);
+
+    const matchesDataset =
+      !buildingOutlineDatasetFilterSelection.value.length ||
+      buildingOutlineDatasetFilterSelection.value.some((selectedDataset) =>
+        measure.datasets.includes(selectedDataset.toString())
+      );
+
+    return matchesMethod && matchesDataset;
+  });
+});
 </script>
 
 <template>
@@ -470,10 +495,23 @@ const updateMapLocation = (newLocation: MapLocation) => {
       <div class="flex flex-1 flex-col min-h-0">
         <div class="flex max-h-full min-h-0">
           <ScrollPanel class="flex-1 max-h-full w-full" style="height: unset;">
-            <div>
-              <FloorMeasureComponent v-for="(fm, index) in clickedFloorMeasures" :floorMeasure="fm" :isLast="index === clickedFloorMeasures.length - 1"></FloorMeasureComponent>
-            </div>
-          </ScrollPanel>
+          <div>
+            <template v-if="filteredFloorMeasures.length > 0">
+              <FloorMeasureComponent
+                v-for="(fm, index) in filteredFloorMeasures"
+                :key="fm.id"
+                :floorMeasure="fm"
+                :isLast="index === filteredFloorMeasures.length - 1"
+              />
+            </template>
+            <template v-else>
+              <div class="flex flex-col items-center justify-center gap-2">
+                <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+                <div class="opacity-50">No floor measures found for the selected filters.</div>
+              </div>
+            </template>
+          </div>
+        </ScrollPanel>
         </div>
       </div>
     </Panel>
