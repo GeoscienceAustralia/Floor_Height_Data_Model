@@ -9,6 +9,7 @@ import FloorHeightsMap from './FloorHeightsMap';
 import {FloorMeasure, AddressPoint, Building, MapLocation} from './types';
 import FloorMeasureComponent from './FloorMeasureComponent.vue';
 import MenuComponent from './MenuComponent.vue';
+import ImageWindowComponent from './ImageWindowComponent.vue';
 import CategorisedLegendComponent from './CategorisedLegendComponent.vue';
 import GraduatedLegendComponent from './GraduatedLegendComponent.vue';
 
@@ -16,6 +17,7 @@ const toast = useToast();
 
 const map = ref();
 const showLegend = ref(false);
+const showImageWindow = ref(false);
 const showAddressPoints = ref(false);
 const showBuildingOutlines = ref(false);
 const showBuildingOutlineOptions = ref(false);
@@ -350,6 +352,13 @@ const updateMapLocation = (location: MapLocation) => {
             class="w-full min-w-0"
           />
         </div>
+        <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
+          <div class="items-center">
+            <i class="pi pi-image" style="font-size: 1rem"></i>
+            <label for="showImageWindow" class="ml-2"> Show Image Window </label>
+          </div>
+          <ToggleSwitch v-model="showImageWindow" />
+        </div>
       </div>
     </Panel>
 
@@ -457,8 +466,10 @@ const updateMapLocation = (location: MapLocation) => {
 
   <MenuComponent v-model:modelValue="selectedMapLocation" :options="mapLocationOptions" @change="updateMapLocation"/>
 
-  <div id="legend">
-  <Panel v-if=showLegend class="flex-none">
+  <ImageWindowComponent v-if="showImageWindow" :building="clickedBuilding" @close-image-window="showImageWindow = !showImageWindow"/>
+  
+  <div v-if="showLegend && !showImageWindow" id="legend">
+  <Panel class="flex-none">
     <template #header>
       <div class="flex items-center gap-2" style="margin-bottom: -10px;">
         <i class="pi pi-list" style="font-size: 1rem"></i>
@@ -473,7 +484,6 @@ const updateMapLocation = (location: MapLocation) => {
 </template>
 
 <style scoped>
-
 #map {
   height: 100vh;
 }
@@ -491,8 +501,7 @@ const updateMapLocation = (location: MapLocation) => {
   position: absolute;
   bottom: 20px;
   right: 50px;
-  width: 370px;
-  z-index: 1;
+  width: 400px;
 }
 
 .subheading {
@@ -506,5 +515,4 @@ const updateMapLocation = (location: MapLocation) => {
   color: white;
   letter-spacing: -2px;
 }
-
 </style>
