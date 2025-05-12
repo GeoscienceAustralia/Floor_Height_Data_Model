@@ -327,19 +327,16 @@ const filteredFloorMeasures = computed(() => {
         </div>
       </template>
       <div class="flex flex-col gap-1">
-        <div>
-          Select layers to show in map
-        </div>
         <div class="flex items-center pl-2">
           <div class="items-center">
             <Checkbox inputId="showAddressPoints" v-model="showAddressPoints" :binary="true" />
-            <label for="showAddressPoints" class="ml-2"> Address Points </label>
+            <label for="showAddressPoints" class="ml-2">Address Points</label>
           </div>
         </div>
         <div class="flex pl-2 items-center justify-between">
           <div class="items-center">
             <Checkbox inputId="showBuildingOutlines" v-model="showBuildingOutlines" :binary="true" />
-            <label for="showBuildingOutlines" class="ml-2"> Building Outlines </label>
+            <label for="showBuildingOutlines" class="ml-2">Building Outlines</label>
           </div>
           <ToggleButton
             v-model="showBuildingOutlineOptions"
@@ -395,7 +392,7 @@ const filteredFloorMeasures = computed(() => {
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <div class="items-center">
             <i class="pi pi-image" style="font-size: 1rem"></i>
-            <label for="showImageWindow" class="ml-2"> Show Image Window </label>
+            <label for="showImageWindow" class="ml-2">Show Image Window</label>
           </div>
           <ToggleSwitch v-model="showImageWindow" />
         </div>
@@ -411,11 +408,11 @@ const filteredFloorMeasures = computed(() => {
       </template>
       <div class="flex flex-col gap-1">
         <div class="flex flex-col gap-0">
-          <div class="subheading"> Address: </div>
+          <div class="subheading">Address:</div>
           <div> {{ clickedAddressPoint.address }} </div>
         </div>
         <div class="flex flex-col gap-0">
-          <div class="subheading"> GNAF ID: </div>
+          <div class="subheading">GNAF ID:</div>
           <div> {{ clickedAddressPoint.gnaf_id }} </div>
         </div>
       </div>
@@ -430,7 +427,7 @@ const filteredFloorMeasures = computed(() => {
       </template>
       <div class="flex flex-col gap-1">
         <div class="flex flex-col gap-0">
-          <div class="subheading"> Absolute Height (m) </div>
+          <div class="subheading">Absolute Height (m)</div>
           <div class="flex flex-row w-full">
             <div class="basis-1/2"> min: {{ clickedBuilding.min_height_ahd.toFixed(3) }} </div>
             <div class="basis-1/2"> max: {{ clickedBuilding.max_height_ahd.toFixed(3) }} </div>
@@ -440,24 +437,18 @@ const filteredFloorMeasures = computed(() => {
     </Panel>
 
     <Panel class="flex-none" v-if="!(clickedAddressPoint || clickedBuilding)" >
-      <div class="flex flex-col gap-2">
-        <div class="flex flex-row w-full items-center justify-center content-center gap-2">
-          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-        </div>
-        <div class="flex flex-col gap-1">
-          <div class="opacity-50"> Select address point or building outline to show floor height data. </div>
-        </div>
+      <div class="flex flex-col items-center justify-center gap-2">
+        <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+        <div class="opacity-50"> Select address point or building outline to show floor height data. </div>
       </div>
     </Panel>
 
-    <Panel class="flex-none" v-if="clickedBuilding && clickedFloorMeasures.length == 0" >
+    <Panel class="flex-none text-center items-center" v-if="clickedBuilding && clickedFloorMeasures.length == 0" >
       <div class="flex flex-col gap-2">
-        <div class="flex flex-row w-full items-center justify-center content-center gap-2">
+        <div class="flex flex-col items-center justify-center gap-2">
           <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
         </div>
-        <div class="flex flex-col gap-1">
-          <div class="opacity-50"> No floor measures found for this building </div>
-        </div>
+        <div class="opacity-50">No floor measures found for this building.</div>
       </div>
     </Panel>
 
