@@ -554,7 +554,7 @@ def build_floor_measure_query(
         building_id_field = Building.id.label("building_id")
     else:
         building_id_field = floor_measure_table.c.building_id.label("building_id")
-    if accuracy_measure:
+    if accuracy_measure is not None:
         accuracy_measure_field = literal(accuracy_measure)
     else:
         accuracy_measure_field = floor_measure_table.c.accuracy_measure
