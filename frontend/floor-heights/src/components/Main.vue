@@ -98,6 +98,18 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([show
   }
 });
 
+watch(buildingOutlineMethodFilterSelection, (newFilter) => {
+  if (newFilter == null) {
+    buildingOutlineMethodFilterSelection.value = [];
+  }
+});
+
+watch(buildingOutlineDatasetFilterSelection, (newFilter) => {
+  if (newFilter == null) {
+    buildingOutlineDatasetFilterSelection.value = [];
+  }
+});
+
 watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection], async ([showBuildingOutlines, datasets]) => {
   if (showBuildingOutlines) {
     map.value.setDatasetFilter(datasets);
@@ -332,7 +344,8 @@ const updateMapLocation = (newLocation: MapLocation) => {
             :options="buildingOutlineMethodFilterOptions"
             placeholder="Filter Methods"
             class="w-full min-w-0"
-          />
+            showClear
+            />
         </div>
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <i class="pi pi-filter" style="font-size: 1rem"></i>
@@ -341,17 +354,18 @@ const updateMapLocation = (newLocation: MapLocation) => {
             :options="buildingOutlineDatasetFilterOptions"
             placeholder="Filter Datasets"
             class="w-full min-w-0"
-          />
+            showClear
+            />
         </div>
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <i class="pi pi-palette" style="font-size: 1rem"></i>
-          <Select
-            v-model="buildingOutlineFillSelection"
-            :options="buildingOutlineFillOptions"
-            placeholder="Fill Variable"
-            showClear
-            class="w-full min-w-0"
-          />
+            <Select
+              v-model="buildingOutlineFillSelection"
+              :options="buildingOutlineFillOptions"
+              placeholder="Fill Variable"
+              class="w-full min-w-0"
+              showClear
+              />
         </div>
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <div class="items-center">
@@ -481,10 +495,19 @@ const updateMapLocation = (newLocation: MapLocation) => {
     <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
   </Panel>
   </div>
-
 </template>
 
 <style scoped>
+:deep(.p-multiselect-clear-icon) {
+  background-color: var(--p-surface-0);
+  margin-right: -8px;
+}
+
+:deep(.p-select-clear-icon) {
+  background-color: var(--p-surface-0);
+  margin-right: -8px;
+}
+
 #map {
   height: 100vh;
 }
