@@ -131,10 +131,10 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
     if (fillOption && (!datasets || datasets.length === 0)) {
       datasets = buildingOutlineDatasetFilterOptions.value
     }
-    
+
     if (fillOption) {
       if (fillOption === 'Floor Height') {
-        const locationBounds = generateLocationBounds(selectedMapLocation)      
+        const locationBounds = generateLocationBounds(selectedMapLocation)
         await fetchGraduatedLegendValues(methods, datasets, locationBounds);
         // @ts-ignore
         const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value.min, buildingGraduatedFillLegend.value.max)
@@ -182,13 +182,13 @@ const onBuildingClicked = (clickedObject: any) => {
   fetchFloorMeasures(clickedBuilding.value?.id);
 };
 
-const fetchFloorMeasures = async (building_id: string) => {
+const fetchFloorMeasures = async (buildingId: string) => {
   try {
-    const response = await axios.get<FloorMeasure[]>(`api/floor-height-data/${building_id}`);
+    const response = await axios.get<FloorMeasure[]>(`api/floor-height-data/${buildingId}`);
     clickedFloorMeasures.value = response.data
     console.log(clickedFloorMeasures.value);
   } catch (error) {
-    console.error(`Failed to fetch floor measures for building id ${building_id}`);
+    console.error(`Failed to fetch floor measures for building id ${buildingId}`);
     toast.add(
       {
         severity: 'error',
