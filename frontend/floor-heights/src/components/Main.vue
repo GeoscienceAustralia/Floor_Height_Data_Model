@@ -464,7 +464,7 @@ const updateMapLocation = (location: MapLocation) => {
     </Panel>
   </div>
 
-  <MenuComponent v-model:modelValue="selectedMapLocation" :options="mapLocationOptions" @change="updateMapLocation"/>
+  <MenuComponent v-model="selectedMapLocation" :options="mapLocationOptions" @update-map-location="updateMapLocation"/>
 
   <ImageWindowComponent v-if="showImageWindow" :building="clickedBuilding" @close-image-window="showImageWindow = !showImageWindow"/>
   
