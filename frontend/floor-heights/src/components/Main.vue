@@ -261,10 +261,11 @@ const generateLocationBounds = (location: MapLocation) => {
   return locationBounds;
 };
 
-const updateMapLocation = (location: MapLocation) => {
+const updateMapLocation = (newLocation: MapLocation) => {
   if (map) {
-    map.value.setCenter(location.coordinates);
+    map.value.setCenter(newLocation.coordinates);
     map.value.setZoom(12);
+    selectedMapLocation.value = newLocation;
   }
 };
 </script>
