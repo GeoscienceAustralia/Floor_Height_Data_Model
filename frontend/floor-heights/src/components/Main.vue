@@ -33,6 +33,7 @@ const clickedFloorMeasures = ref<FloorMeasure[]>([]);
 
 const legendType = ref<String | null>(null);
 const legendObject = ref<Record<string, string>>({});
+const legendObjectLength = computed(() => Object.keys(legendObject.value).length);
 const buildingGraduatedFillLegend = ref<String[]>([]);
 const buildingCategorisedFillLegend = ref<String[]>([]);
 
@@ -513,17 +514,31 @@ const filteredFloorMeasures = computed(() => {
   <ImageWindowComponent v-if="showImageWindow" :building="clickedBuilding" @close-image-window="showImageWindow = !showImageWindow"/>
   
   <div v-if="showLegend && !showImageWindow" id="legend">
-  <Panel class="flex-none">
-    <template #header>
-      <div class="flex items-center gap-2" style="margin-bottom: -10px;">
-        <i class="pi pi-list" style="font-size: 1rem"></i>
-        <span class="font-bold">Legend</span>
-      </div>
-    </template>
-    <CategorisedLegendComponent v-if="legendType === 'categorised'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-    <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-  </Panel>
+    <Panel class="flex-none">
+      <template #header>
+        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+          <i class="pi pi-list" style="font-size: 1rem"></i>
+          <span class="font-bold">Legend</span>
+        </div>
+      </template>
+      <CategorisedLegendComponent v-if="legendType === 'categorised'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+      <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+    </Panel>
   </div>
+  <div v-if="showLegend && legendObjectLength == 0" id="legend">
+    <Panel class="flex-none">
+      <template #header>
+        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+          <i class="pi pi-list" style="font-size: 1rem"></i>
+          <span class="font-bold">Legend</span>
+        </div>
+        </template>
+        <div class="flex flex-col items-center justify-center gap-2">
+          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+          <div class="opacity-50">No data found for the selected filters.</div>
+        </div>
+    </Panel>
+  </div>  
 </template>
 
 <style scoped>
