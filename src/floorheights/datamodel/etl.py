@@ -166,8 +166,10 @@ def sample_dem_with_buildings(
     return min_heights, max_heights
 
 
-def remove_overlapping_geoms(session: Session, overlap_threshold: float) -> Result:
-    """Remove overlapping geometries"""
+def remove_overlapping_geoms(
+    session: Session, overlap_threshold: float, bbox: tuple = None
+) -> Result:
+    """Remove overlapping geometries within a bounding box"""
     # Alias so we can perform self-comparison
     smaller = aliased(Building, name="smaller")
     larger = aliased(Building, name="larger")
@@ -207,7 +209,14 @@ def remove_overlapping_geoms(session: Session, overlap_threshold: float) -> Resu
             # If the ratio exceeds a threshold we select it for deletion
             > overlap_threshold
         )
-    ).distinct(lateral_subquery.c.id)
+    )
+
+    # If a bounding box is provided, filter buildings within the bbox
+    if bbox is not None:
+        bbox_geom = func.ST_MakeEnvelope(*bbox, 4326)
+        select_query = select_query.where(func.ST_Intersects(smaller.outline, bbox_geom))
+
+    select_query = select_query.distinct(lateral_subquery.c.id)
 
     delete_stmt = delete(Building).where(Building.id.in_(select_query))
     return session.execute(delete_stmt)
