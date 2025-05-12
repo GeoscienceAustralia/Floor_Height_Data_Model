@@ -98,31 +98,19 @@ watch(() => props.building?.id, (newId) => {
               </div>
               <div id="image-placeholder" v-else-if="props.building == null" class="flex flex-col gap-2"
                 :class="{ expanded: isExpanded }">
-                <div class="flex flex-row w-full items-center justify-center content-center gap-2">
-                  <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-                </div>
-                <div class="flex flex-col gap-1">
-                  <div class="opacity-50">Select a building to show panorama images</div>
-                </div>
+                <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+                <div class="opacity-50">Select a building to show panorama images.</div>
               </div>
               <div id="image-placeholder" v-else class="flex flex-col gap-2" :class="{ expanded: isExpanded }">
-                <div class="flex flex-row w-full items-center justify-center content-center gap-2">
-                  <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-                </div>
-                <div class="flex flex-col gap-1">
-                  <div class="opacity-50">No panorama images found for this building</div>
-                </div>
+                <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+                <div class="opacity-50">No panorama images found for this building.</div>
               </div>
             </TabPanel>
             <TabPanel value="1">
               <!-- Placeholder until LIDAR images are created -->
               <div id="image-placeholder" class="flex flex-col gap-2" :class="{ expanded: isExpanded }">
-                <div class="flex flex-row w-full items-center justify-center content-center gap-2">
-                  <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-                </div>
-                <div class="flex flex-col gap-1">
-                  <div class="opacity-50">No LIDAR images found for this building</div>
-                </div>
+                <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+                <div class="opacity-50">No LIDAR images found for this building.</div>
               </div>
             </TabPanel>
           </TabPanels>
