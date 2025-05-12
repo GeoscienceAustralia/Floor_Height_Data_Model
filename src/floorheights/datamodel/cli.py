@@ -694,7 +694,7 @@ def ingest_main_method(
 
     click.echo("Loading Floor Height JSON...")
     try:
-        json_data = json.load(open(input_json.name))
+        json_data = json.load(input_json)
         method_df = pd.DataFrame(json_data["buildings"])
     except Exception as error:
         raise click.exceptions.FileError(input_json.name, error)
