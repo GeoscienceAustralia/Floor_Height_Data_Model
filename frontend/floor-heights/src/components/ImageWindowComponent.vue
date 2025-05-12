@@ -71,7 +71,7 @@ watch(() => props.building?.id, (newId) => {
 </script>
 
 <template>
-  <div v-if=!isClosed id="image-window" class="flex-col" :class="{ expanded: isExpanded }">
+  <div v-if="!isClosed" id="image-window" class="flex-col" :class="{ expanded: isExpanded }">
     <Panel class="flex-none">
       <div style="margin-top: -16px;">
         <Tabs value="0">
