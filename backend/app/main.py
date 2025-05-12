@@ -468,7 +468,11 @@ async def map_proxy(
     # Construct the target URL
     # a valid url should be something like:
     # http://martin:3000/building_query/13/7450/4949
+    # Construct the target URL with query parameters
+    query_string = request.url.query
     target_url = urljoin(MAPS_HOST, f"{path}")
+    if query_string:
+        target_url = f"{target_url}?{query_string}"
 
     rp_req = MAPS_SERVER.build_request(
         request.method, target_url, headers=request.headers.raw, content=await request.body()
