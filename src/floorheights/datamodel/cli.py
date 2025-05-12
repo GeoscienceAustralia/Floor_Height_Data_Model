@@ -215,7 +215,9 @@ def ingest_buildings(
 
         if remove_overlapping:
             click.echo("Removing overlapping buildings...")
-            result = etl.remove_overlapping_geoms(session, remove_overlapping)
+            result = etl.remove_overlapping_geoms(
+                session, remove_overlapping, bbox=mask_bbox.tolist()
+            )
             click.echo(f"Removed {result.rowcount} overlapping buildings...")
 
         click.echo("Building ingestion complete")
