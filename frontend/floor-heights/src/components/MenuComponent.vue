@@ -76,8 +76,8 @@ const fetchGeoJSON = async () => {
 
 <template>
   <div id="menu" class="flex flex-row gap-2 flex-1">
-    <div id="overlay" class="flex flex-col gap-2 flex-1">
-      <Panel v-if="showMenu" class="flex-none">
+    <div v-if="showMenu" id="overlay" class="flex flex-col gap-2 flex-1">
+      <Panel class="flex-none">
         <template #header>
           <div class="flex items-center gap-2" style="margin-bottom: -20px; width: 100%">
             <i class="pi pi-map-marker" style="font-size: 1rem"></i>
@@ -99,8 +99,8 @@ const fetchGeoJSON = async () => {
       </Panel>
     </div>
     <div class="flex-none">
-      <Button @click="toggleMenuVisibility" :icon="showMenu ? 'pi pi-times' : 'pi pi-bars'" class="p-button"
-        size="small" />
+      <Button @click="toggleMenuVisibility" :icon="showMenu ? 'pi pi-times' : 'pi pi-bars'"
+        size="small" class="button"/>
     </div>
   </div>
 </template>
@@ -116,5 +116,10 @@ const fetchGeoJSON = async () => {
 #overlay {
   width: 400px;
   z-index: 1;
+}
+
+.button{
+  width: 2rem;
+  height: 2rem;
 }
 </style>
