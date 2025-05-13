@@ -253,12 +253,19 @@ const createCategorisedLegendObject = (colorMap: (number | string)[]) => {
   legendObject.value = legend;
 };
 
-const createGraduatedLegendObject = (colorMap: (number | string)[]) => {
+const createGraduatedLegendObject = (colorMap: (number | string | null)[]) => {
   const legend: Record<number, string> = {};
 
   for (let i = 0; i < colorMap.length - 1; i += 2) {
-    const label = colorMap[i] as number;
+    const label = colorMap[i] as number | null;
     const color = colorMap[i + 1] as string;
+
+    // If a null label is found, clear the legend and return
+    if (label === null) {
+      legendObject.value = {};
+      return;
+    }
+
     legend[label] = color;
   }
 
