@@ -166,8 +166,10 @@ def sample_dem_with_buildings(
     return min_heights, max_heights
 
 
-def remove_overlapping_geoms(session: Session, overlap_threshold: float) -> Result:
-    """Remove overlapping geometries"""
+def remove_overlapping_geoms(
+    session: Session, overlap_threshold: float, bbox: tuple = None
+) -> Result:
+    """Remove overlapping geometries within a bounding box"""
     # Alias so we can perform self-comparison
     smaller = aliased(Building, name="smaller")
     larger = aliased(Building, name="larger")
@@ -207,7 +209,14 @@ def remove_overlapping_geoms(session: Session, overlap_threshold: float) -> Resu
             # If the ratio exceeds a threshold we select it for deletion
             > overlap_threshold
         )
-    ).distinct(lateral_subquery.c.id)
+    )
+
+    # If a bounding box is provided, filter buildings within the bbox
+    if bbox is not None:
+        bbox_geom = func.ST_MakeEnvelope(*bbox, 4326)
+        select_query = select_query.where(func.ST_Intersects(smaller.outline, bbox_geom))
+
+    select_query = select_query.distinct(lateral_subquery.c.id)
 
     delete_stmt = delete(Building).where(Building.id.in_(select_query))
     return session.execute(delete_stmt)
@@ -532,26 +541,34 @@ def build_floor_measure_query(
     floor_measure_table: Table,
     ffh_field: str,
     method_id: uuid.UUID,
-    accuracy_measure: float,
     storey: int,
-    join_by: Literal["gnaf_id", "intersects", "cadastre", "knn"],
+    accuracy_measure: float = None,
+    join_by: Literal["gnaf_id", "intersects", "cadastre", "knn"] = None,
     gnaf_id_col: str = None,
     step_counting: bool = None,
     step_size: float = None,
     cadastre: Table = None,
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
-    building_id = Building.id.label("building_id")
+    if join_by:
+        building_id_field = Building.id.label("building_id")
+    else:
+        building_id_field = floor_measure_table.c.building_id.label("building_id")
+    if accuracy_measure is not None:
+        accuracy_measure_field = literal(accuracy_measure)
+    else:
+        accuracy_measure_field = floor_measure_table.c.accuracy_measure
+
     select_fields = [
         floor_measure_table.c.id.label("id"),
         literal(storey).label("storey"),
         floor_measure_table.c[ffh_field].label("height"),
-        literal(accuracy_measure).label("accuracy_measure"),
+        accuracy_measure_field.label("accuracy_measure"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
             floor_measure_table, [ffh_field, "id", "geometry"]
         ).label("aux_info"),
-        building_id,
+        building_id_field
     ]
 
     if join_by == "gnaf_id":
@@ -576,7 +593,7 @@ def build_floor_measure_query(
             cadastre.c.geometry,
         ).where(
             ~exists().where(
-                FloorMeasure.building_id == building_id,
+                FloorMeasure.building_id == building_id_field,
             )
         )
     elif join_by == "knn":
@@ -586,7 +603,7 @@ def build_floor_measure_query(
             cadastre_geom = None
 
         # Remove building id from additional fields because we select it from the lateral subquery
-        select_fields.remove(building_id)
+        select_fields.remove(building_id_field)
 
         lateral_fields = [
             Building.id.label("building_id"),
@@ -599,6 +616,8 @@ def build_floor_measure_query(
             cadastre_table=cadastre,
             cadastre_geom=cadastre_geom,
         )
+    else:
+        select_query = select(*select_fields).select_from(floor_measure_table)
 
     if step_counting is True and step_size:
         # Select floor heights divisible by step_size
@@ -635,18 +654,18 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
         .on_conflict_do_nothing()
         .returning(FloorMeasure.id)
     )
-    return ids.all()
+    return list(ids.all())
 
 
 def insert_floor_measure_dataset_association(
-    session: Session, nexis_dataset_id: uuid.UUID, floor_measure_inserted_ids: list
+    session: Session, dataset_id: uuid.UUID, floor_measure_inserted_ids: list
 ) -> None:
-    """Insert records into the floor_measure_dataset_association table from a
-    NEXIS Dataset record id and a list of FloorMeasure ids
+    """Insert records into the floor_measure_dataset_association table from a Dataset
+    record id and a list of FloorMeasure ids
     """
     # Parse list of ids into a dict for inserting into the association table
     floor_measure_dataset_values = [
-        {"floor_measure_id": row.id, "dataset_id": nexis_dataset_id}
+        {"floor_measure_id": row, "dataset_id": dataset_id}
         for row in floor_measure_inserted_ids
     ]
     session.execute(
