@@ -1,6 +1,6 @@
 from geoalchemy2 import Geometry
 from sqlalchemy import (
-    create_engine, Column, String, UUID, Float, Integer, JSON, Table, ForeignKey
+    create_engine, Column, String, UUID, Float, Integer, JSON, LargeBinary, Table, ForeignKey
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -88,6 +88,19 @@ class FloorMeasure(Base):
         secondary=floor_measure_dataset_association,
         back_populates='floor_measures'
     )
+
+
+class FloorMeasureImage(Base):
+    __tablename__ = 'floor_measure_image'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    filename = Column(String, nullable=False)
+    image_data = Column(LargeBinary, nullable=False)
+    type = Column(String, nullable=True)
+
+    # Foreign key to FloorMeasure
+    floor_measure_id = Column(UUID(as_uuid=True), ForeignKey('floor_measure.id'), nullable=False)
+    # Many-to-one relationship to FloorMeasure
+    floor_measure = relationship('FloorMeasure')
 
 
 class Method(Base):

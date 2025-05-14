@@ -16,6 +16,7 @@ declare module 'vue' {
     FloorMeasureComponent: typeof import('./src/components/FloorMeasureComponent.vue')['default']
     GraduatedLegendComponent: typeof import('./src/components/GraduatedLegendComponent.vue')['default']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
+    ImageWindowComponent: typeof import('./src/components/ImageWindowComponent.vue')['default']
     LegendComponent: typeof import('./src/components/LegendComponent.vue')['default']
     Main: typeof import('./src/components/Main.vue')['default']
     MenuButton: typeof import('./src/components/MenuButton.vue')['default']
@@ -26,5 +27,6 @@ declare module 'vue' {
     Select: typeof import('primevue/select')['default']
     Toast: typeof import('primevue/toast')['default']
     ToggleButton: typeof import('primevue/togglebutton')['default']
+    ToggleSwitch: typeof import('primevue/toggleswitch')['default']
   }
 }
