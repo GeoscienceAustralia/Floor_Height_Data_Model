@@ -106,6 +106,8 @@ def ingest_address_points(input_address, chunksize):
 @click.option("-d", "--input-dem", required=True, type=click.File(), help="Input DEM file path.")  # fmt: skip
 @click.option("-s", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 @click.option("--split-by-cadastre", type=str, help="Split buildings by cadastre, specify input cadastre vector file path for splitting.")  # fmt: skip
+@click.option("--join-land-zoning", type=click.File(), help="Join land zoning type to buildings, specify input land zoning vector file path.")  # fmt: skip
+@click.option("--land-zoning-field", type=str, help="The land zoning dataset's field name to join to buildings.")  # fmt: skip
 @click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
 @click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
 def ingest_buildings(
@@ -113,10 +115,17 @@ def ingest_buildings(
     input_dem,
     chunksize,
     split_by_cadastre,
+    join_land_zoning,
+    land_zoning_field,
     remove_small,
     remove_overlapping,
 ):
     """Ingest building footprints"""
+    if join_land_zoning and not land_zoning_field:
+        raise click.UsageError(
+            "--join-land-zoning must be used with --land-zoning-field"
+        )
+
     click.echo("Loading DEM...")
     try:
         dem = rasterio.open(input_dem.name)
@@ -181,6 +190,28 @@ def ingest_buildings(
         remove_count = (bool_mask).value_counts()[False]
         click.echo(f"Removed {remove_count} buildings...")
 
+    if join_land_zoning:
+        click.echo(f"Joining land zoning attribute...")
+        try:
+            land_use = etl.read_ogr_file(
+                join_land_zoning.name, mask=mask_df
+            )
+            land_use = land_use.to_crs(dem.crs)
+
+            if land_zoning_field not in land_use.columns:
+                raise click.exceptions.BadParameter(
+                    f"Field '{land_zoning_field}' not found in land land zoning dataset"
+                )
+
+            # Sample land use zoning polygons with building footprints
+            buildings = etl.sample_polys_with_buildings(
+                land_use, buildings, land_zoning_field
+            )
+            buildings = buildings.rename(columns={land_zoning_field: "land_use_zone"})
+
+        except Exception as error:
+            raise click.exceptions.FileError(Path(join_land_zoning).name, error)
+
     click.echo("Sampling DEM with buildings...")
     min_heights, max_heights = etl.sample_dem_with_buildings(dem, buildings)
     buildings["min_height_ahd"] = min_heights
@@ -191,8 +222,6 @@ def ingest_buildings(
     buildings = buildings[buildings["max_height_ahd"].notna()]
 
     buildings = buildings.round({"min_height_ahd": 3, "max_height_ahd": 3})
-
-    # TODO: Handle building footprints overlapping the edge of the DEM
 
     # Remove any buildings that sample no data
     buildings = buildings[buildings["min_height_ahd"] != dem.nodata]
@@ -448,9 +477,13 @@ def ingest_nexis_method(input_nexis, clip_to_cadastre, flatten_cadastre, join_la
                 session, modelled_query_cadastre_knn
             )
 
+            # Concat the inserted id lists
             modelled_inserted_ids += (
                 modelled_inserted_cadastre_ids + modelled_inserted_cadastre_knn_ids
             )
+
+            # List of tuples to list of ids
+            modelled_inserted_ids = [id for (id,) in modelled_inserted_ids]
 
         if modelled_inserted_ids:
             nexis_dataset_id = etl.get_or_create_dataset_id(
@@ -661,6 +694,9 @@ def ingest_validation_method(
                 + step_count_knn_ids
                 + survey_knn_ids
             )
+
+            # List of tuples to list of ids
+            validation_inserted_ids = [id for (id,) in validation_inserted_ids]
 
         if validation_inserted_ids:
             if not dataset_name:

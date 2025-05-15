@@ -166,6 +166,38 @@ def sample_dem_with_buildings(
     return min_heights, max_heights
 
 
+def sample_polys_with_buildings(
+    polygons: gpd.GeoDataFrame,
+    buildings: gpd.GeoDataFrame,
+    field: str,
+) -> gpd.GeoDataFrame:
+    """Sample a field's values from a polygon dataset for each building geometry"""
+    buildings = buildings.reset_index()
+
+    # Perform a spatial join to associate land use polygons with building footprints
+    intersections = gpd.overlay(
+        buildings, polygons, how="intersection", keep_geom_type=False
+    )
+    intersections["intersection_area"] = intersections.to_crs(
+        {"proj": "cea"}
+    ).geometry.area
+
+    # Identify the intersection with the maximum area for each building
+    max_intersections = intersections.loc[
+        intersections.groupby("index")["intersection_area"].idxmax()
+    ]
+
+    # Assign the land use value back to the original buildings GeoDataFrame
+    buildings = buildings.merge(
+        max_intersections[["index", field]], on="index", how="left"
+    )
+    buildings = buildings.drop(columns=["index"])
+
+    buildings = buildings[buildings[field].notna()]
+
+    return buildings
+
+
 def remove_overlapping_geoms(
     session: Session, overlap_threshold: float, bbox: tuple = None
 ) -> Result:
@@ -244,7 +276,11 @@ def split_by_cadastre(
     ]
 
     # Split these buildings by cadastre lots
-    split_buildings = gpd.overlay(buildings_to_split, cadastre, how="intersection")
+    split_buildings = gpd.overlay(
+        buildings_to_split, cadastre, how="intersection", keep_geom_type=False
+    )
+
+    split_buildings.to_file("split_buildings.gpkg")
 
     # Update the original GeoDataFrame
     buildings.loc[buildings_to_split.index, "geometry"] = None
@@ -253,6 +289,8 @@ def split_by_cadastre(
         crs=buildings.crs,
     )
     buildings = buildings.explode()
+    buildings = buildings.reset_index(drop=True)
+
     return buildings
 
 
