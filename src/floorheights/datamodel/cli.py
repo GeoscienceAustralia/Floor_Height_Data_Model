@@ -174,11 +174,13 @@ def ingest_buildings(
                     conn,
                     geom_col="location",
                 )
+                # Check if the addresses are empty for the area of interest
                 address_points = address_points.to_crs(dem.crs)
+                if not address_points.within(mask_df.geometry.iloc[0]).any:
+                    raise Exception
             except Exception as error:
                 raise click.exceptions.BadParameter(
-                    "--split-by-cadastre can only be used after ingesting address_points.",
-                    error,
+                    "--split-by-cadastre can only be used after ingesting address_points."
                 )
 
             buildings = etl.split_by_cadastre(address_points, buildings, cadastre)
