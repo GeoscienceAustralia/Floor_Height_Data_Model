@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { LngLatBoundsLike, LngLat } from 'maplibre-gl';
 import { ref, onMounted, watch, computed } from 'vue';
+import MultiSelect from 'primevue/multiselect';
 import Panel from 'primevue/panel';
 import ScrollPanel from 'primevue/scrollpanel';
 import { useToast } from "primevue/usetoast";
@@ -46,8 +47,8 @@ const buildingOutlineFillOptions: string[] = [
 
 // Define locations for the menu dropdown
 const mapLocationOptions: MapLocation[] = [
-  { label: 'Wagga Wagga, NSW', coordinates: new LngLat(147.360, -35.120) },
-  { label: 'Launceston, TAS', coordinates: new LngLat(147.144, -41.434) },
+  { label: 'Wagga Wagga, NSW', coordinates: new LngLat(147.370, -35.120) },
+  { label: 'Launceston, TAS', coordinates: new LngLat(147.144, -41.422) },
   { label: 'Tweed Heads, NSW', coordinates: new LngLat(153.537, -28.205) },
 ];
 
@@ -284,7 +285,7 @@ const generateLocationBounds = (location: MapLocation) => {
 const updateMapLocation = (newLocation: MapLocation) => {
   if (map) {
     map.value.setCenter(newLocation.coordinates);
-    map.value.setZoom(12);
+    map.value.setZoom(13);
     selectedMapLocation.value = newLocation;
   }
 };
