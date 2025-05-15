@@ -246,7 +246,11 @@ export default class FloorHeightsMap {
         'source-layer': 'address_point',
         'paint': {
           'circle-color': COLOR_ADDRESS_POINT,
-          'circle-radius': 5,
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            14, 1,  // when zoomed out, radius is 1
+            18, 5  // when zoomed in, radius is 5
+          ],
         }
       });
     } else {
