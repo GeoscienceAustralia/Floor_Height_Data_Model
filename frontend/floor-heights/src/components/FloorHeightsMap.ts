@@ -291,36 +291,19 @@ export default class FloorHeightsMap {
     }, 'address_point');
   }
 
-  setMethodFilter(methods: string[]) {
-    if (methods != null) {
-      if (methods.length == 0) {
-        this.map?.setFilter('building_fh', null);
-        return;
-      }
-      const filterExpression = [
-          "any",
-          ...methods.map(name => ["!", ["==", ["index-of", name, ["get", "method_names"]], -1]])
-      ];
-
-      // @ts-ignore
-      this.map?.setFilter('building_fh', filterExpression);
+  setBuildingFilter(datasets: string[], methods: string[]) {
+    if (datasets.length == 0 && methods.length == 0) {
+      this.map?.setFilter('building_fh', null);
+      return;
     }
-  }
+    const filterExpression = [
+        "any",
+        ...datasets.map(name => ["!", ["==", ["index-of", name, ["get", "dataset_names"]], -1]]),
+        ...methods.map(name => ["!", ["==", ["index-of", name, ["get", "method_names"]], -1]])
+    ];
 
-  setDatasetFilter(datasets: string[]) {
-    if (datasets != null) {
-      if (datasets.length == 0) {
-        this.map?.setFilter('building_fh', null);
-        return;
-      }
-      const filterExpression = [
-          "any",
-          ...datasets.map(name => ["!", ["==", ["index-of", name, ["get", "dataset_names"]], -1]])
-      ];
-
-      // @ts-ignore
-      this.map?.setFilter('building_fh', filterExpression);
-    }
+    // @ts-ignore
+    this.map?.setFilter('building_fh', filterExpression);
   }
 
   hideHighlightedFeature() {

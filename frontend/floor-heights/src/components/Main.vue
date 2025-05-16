@@ -96,75 +96,70 @@ watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
 
 watch(buildingOutlineMethodFilterSelection, (newFilter) => {
   if (newFilter == null) {
-    buildingOutlineMethodFilterSelection.value = [];
+    resetMethodFilters();
   }
 });
 
 watch(buildingOutlineDatasetFilterSelection, (newFilter) => {
   if (newFilter == null) {
-    buildingOutlineDatasetFilterSelection.value = [];
+    resetDatasetFilters();
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, methods]) => {
+watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, datasets, methods]) => {
   if (showBuildingOutlines) {
-    map.value.setMethodFilter(methods);
+    map.value.setBuildingFilter(datasets, methods);
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection], async ([showBuildingOutlines, datasets]) => {
-  if (showBuildingOutlines) {
-    map.value.setDatasetFilter(datasets);
-  }
-});
+watch(
+  [showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection, selectedMapLocation],
+  async ([showBuildingOutlines, methods, datasets, fillOption, selectedMapLocation]) => {
+    if (!showBuildingOutlines) return;
 
-watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection, selectedMapLocation], async ([showBuildingOutlines, methods, datasets, fillOption, selectedMapLocation]) => {
-  if (showBuildingOutlines) {
-    // Sort so that the dropdown options match the API request
-    methods.sort()
-    datasets.sort()
+  // Sort so that the dropdown options match the API request
+  methods.sort()
+  datasets.sort()
 
-    // If a method filter isn't applied, set to all values
-    if (fillOption && (!methods || methods.length === 0)) {
-      methods = buildingOutlineMethodFilterOptions.value
-    }
+  if (fillOption) {
 
-    // If a dataset filter isn't applied, set to all values
-    if (fillOption && (!datasets || datasets.length === 0)) {
-      datasets = buildingOutlineDatasetFilterOptions.value
-    }
+    // If a method or dataset filter isn't applied, set to all values
+    methods = methods.length ? methods : buildingOutlineMethodFilterOptions.value;
+    datasets = datasets.length ? datasets : buildingOutlineDatasetFilterOptions.value;
 
-    if (fillOption) {
-      if (fillOption === 'Floor Height') {
-        const locationBounds = generateLocationBounds(selectedMapLocation)
-        await fetchGraduatedLegendValues(methods, datasets, locationBounds);
-        const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value?.min, buildingGraduatedFillLegend.value?.max)
-        map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
-        createGraduatedLegendObject(colorMap)
-        legendType.value = "graduated";
+    const locationBounds = generateLocationBounds(selectedMapLocation)
+
+    if (fillOption === 'Floor Height') {
+      await fetchGraduatedLegendValues(methods, datasets, locationBounds);
+      // Check for an empty legend
+      if (!buildingGraduatedFillLegend.value?.min || !buildingGraduatedFillLegend.value?.min) {
+        legendObject.value = {}
+        showLegend.value = true;
+        return;
       }
-      if (fillOption == 'Dataset') {
-        const locationBounds = generateLocationBounds(selectedMapLocation)
-        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
-        const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
-        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'dataset_names', locationBounds);
-        createCategorisedLegendObject(colorMap)
-        legendType.value = "categorised";
-      }
-      if (fillOption === 'Method') {
-        const locationBounds = generateLocationBounds(selectedMapLocation)
-        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
-        const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
-        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'method_names', locationBounds);
-        createCategorisedLegendObject(colorMap)
-        legendType.value = "categorised";
-      }
-      showLegend.value = true;
-
-    } else {
-      map.value.resetBuildingTiles();
-      showLegend.value = false;
+      const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value?.min, buildingGraduatedFillLegend.value?.max)
+      map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
+      createGraduatedLegendObject(colorMap)
+      legendType.value = "graduated";
     }
+    if (fillOption == 'Dataset' || fillOption == 'Method') {
+      const key = fillOption.toLowerCase() === 'dataset' ? 'dataset_names' : 'method_names';
+      await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
+      // Check for an empty legend
+      if (buildingCategorisedFillLegend.value.length == 0) {
+        legendObject.value = {}
+        showLegend.value = true;
+        return
+      }
+      const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
+      map.value.setBuildingCategorisedFill(methods, datasets, colorMap, key, locationBounds);
+      createCategorisedLegendObject(colorMap)
+      legendType.value = "categorised";
+    }
+    showLegend.value = true;
+  } else {
+    map.value.resetBuildingTiles();
+    showLegend.value = false;
   }
 });
 
@@ -187,7 +182,6 @@ const fetchFloorMeasures = async (buildingId: string) => {
   try {
     const response = await axios.get<FloorMeasure[]>(`api/floor-height-data/${buildingId}`);
     clickedFloorMeasures.value = response.data
-    console.log(clickedFloorMeasures.value);
   } catch (error) {
     console.error(`Failed to fetch floor measures for building id ${buildingId}`);
     toast.add(
@@ -289,6 +283,14 @@ const updateMapLocation = (newLocation: MapLocation) => {
   }
 };
 
+const resetMethodFilters = () => {
+  buildingOutlineMethodFilterSelection.value = []
+}
+
+const resetDatasetFilters = () => {
+  buildingOutlineDatasetFilterSelection.value = []
+}
+
 const filteredFloorMeasures = computed(() => {
   // If no filters are selected, return all floor measures
   if (
@@ -374,6 +376,7 @@ const filteredFloorMeasures = computed(() => {
             :options="buildingOutlineDatasetFilterOptions"
             placeholder="Filter Datasets"
             class="w-full min-w-0"
+            @change="resetMethodFilters"
             showClear
             />
         </div>
@@ -384,6 +387,7 @@ const filteredFloorMeasures = computed(() => {
             :options="buildingOutlineMethodFilterOptions"
             placeholder="Filter Methods"
             class="w-full min-w-0"
+            @change="resetDatasetFilters"
             showClear
             />
         </div>
