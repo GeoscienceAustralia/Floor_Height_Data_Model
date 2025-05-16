@@ -94,12 +94,6 @@ watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, methods]) => {
-  if (showBuildingOutlines) {
-    map.value.setMethodFilter(methods);
-  }
-});
-
 watch(buildingOutlineMethodFilterSelection, (newFilter) => {
   if (newFilter == null) {
     buildingOutlineMethodFilterSelection.value = [];
@@ -109,6 +103,12 @@ watch(buildingOutlineMethodFilterSelection, (newFilter) => {
 watch(buildingOutlineDatasetFilterSelection, (newFilter) => {
   if (newFilter == null) {
     buildingOutlineDatasetFilterSelection.value = [];
+  }
+});
+
+watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, methods]) => {
+  if (showBuildingOutlines) {
+    map.value.setMethodFilter(methods);
   }
 });
 
