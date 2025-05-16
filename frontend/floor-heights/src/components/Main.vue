@@ -7,7 +7,7 @@ import Panel from 'primevue/panel';
 import ScrollPanel from 'primevue/scrollpanel';
 import { useToast } from "primevue/usetoast";
 import FloorHeightsMap from './FloorHeightsMap';
-import {FloorMeasure, AddressPoint, Building, MapLocation} from './types';
+import {FloorMeasure, AddressPoint, Building, MapLocation, GraduatedFillLegend} from './types';
 import FloorMeasureComponent from './FloorMeasureComponent.vue';
 import MenuComponent from './MenuComponent.vue';
 import ImageWindowComponent from './ImageWindowComponent.vue';
@@ -35,7 +35,7 @@ const clickedFloorMeasures = ref<FloorMeasure[]>([]);
 const legendType = ref<String | null>(null);
 const legendObject = ref<Record<string, string>>({});
 const legendObjectLength = computed(() => Object.keys(legendObject.value).length);
-const buildingGraduatedFillLegend = ref<String[]>([]);
+const buildingGraduatedFillLegend = ref<GraduatedFillLegend | null>(null);
 const buildingCategorisedFillLegend = ref<String[]>([]);
 
 // Define options for the fill dropdown
@@ -138,8 +138,7 @@ watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutli
       if (fillOption === 'Floor Height') {
         const locationBounds = generateLocationBounds(selectedMapLocation)
         await fetchGraduatedLegendValues(methods, datasets, locationBounds);
-        // @ts-ignore
-        const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value.min, buildingGraduatedFillLegend.value.max)
+        const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value?.min, buildingGraduatedFillLegend.value?.max)
         map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
         createGraduatedLegendObject(colorMap)
         legendType.value = "graduated";
@@ -210,7 +209,7 @@ const fetchGraduatedLegendValues = async (methods: String[], datasets: String[],
   };
 
   try {
-    buildingGraduatedFillLegend.value = (await axios.get<String[]>(`api/legend-graduated-values/?${new URLSearchParams(queryParams)}`)).data;
+    buildingGraduatedFillLegend.value = (await axios.get<GraduatedFillLegend>(`api/legend-graduated-values/?${new URLSearchParams(queryParams)}`)).data;
   } catch (error) {
     console.error(`Failed to fetch legend values`);
     toast.add({
