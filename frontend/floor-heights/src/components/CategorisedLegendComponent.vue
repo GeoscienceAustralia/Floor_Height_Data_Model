@@ -34,6 +34,7 @@ defineProps({
   border-radius: 4px;
   margin-right: 8px;
   opacity: 0.8;
+  flex-shrink: 0;
 }
 
 .subheading {
