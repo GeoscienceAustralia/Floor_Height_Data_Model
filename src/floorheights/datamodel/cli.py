@@ -899,10 +899,14 @@ def ingest_main_method_images(
 
 @click.command()
 @click.option("-o", "--output-file", required=True, type=str, help="Output OGR dataset file path.")  # fmt: skip
-@click.option("--normalise_aux_info", is_flag=True, help="Normalise the aux_info field into separate columns.")  # fmt: skip
-def export_ogr_file(output_file: str, normalise_aux_info: bool):
-    """Export a denormalised OGR file of the data model"""
-    select_query = etl.build_denormalised_query()
+@click.option("--normalise-aux-info", is_flag=True, help="Normalise the aux_info field into separate columns.")  # fmt: skip
+@click.option("--buildings-only", is_flag=True, help="Export buildings only, for input to object detection processing.")  # fmt: skip
+def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: bool):
+    """Export an OGR file of the data model"""
+    if buildings_only:
+        select_query = etl.build_buildings_query()
+    else:
+        select_query = etl.build_denormalised_query()
 
     session = SessionLocal()
     with session.begin():
@@ -910,7 +914,9 @@ def export_ogr_file(output_file: str, normalise_aux_info: bool):
         try:
             output_file = Path(output_file)
             click.echo(f"Writing OGR file: {output_file}")
-            etl.write_ogr_file(output_file, select_query, conn, normalise_aux_info)
+            etl.write_ogr_file(
+                output_file, select_query, conn, normalise_aux_info, buildings_only
+            )
         except Exception as error:
             raise click.exceptions.FileError(Path(output_file).name, error)
     click.echo(f"Export complete")
