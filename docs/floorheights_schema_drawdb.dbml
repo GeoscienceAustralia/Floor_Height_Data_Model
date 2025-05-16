@@ -1,0 +1,84 @@
+Table address_point {
+	id uuid [ pk, not null, unique ]
+	location point [ not null ]
+	gnaf_id text [ not null ]
+	address text [ not null ]
+	geocode_type text
+}
+
+Table building {
+	id uuid [ pk, not null, unique ]
+	outline polygon [ not null ]
+	min_height_ahd decimal [ not null ]
+	max_height_ahd decimal [ not null ]
+	land_use_zone varchar
+}
+
+Table address_point_building_association {
+	address_point_id uuid [ pk, not null, unique ]
+	building_id uuid [ pk, not null ]
+}
+
+Table dataset {
+	id uuid [ pk, not null, unique ]
+	name text [ not null ]
+	description text
+	source text
+}
+
+Table method {
+	id uuid [ pk, not null, unique ]
+	name text [ not null ]
+}
+
+Table floor_measure {
+	id uuid [ pk, not null, unique ]
+	storey integer [ not null ]
+	building_id uuid [ not null ]
+	method_id uuid [ not null ]
+	dataset_group_id uuid [ not null ]
+	accuracy_measure decimal [ not null ]
+	aux_info json
+	height decimal [ not null ]
+}
+
+Table floor_measure_dataset_association {
+	floor_measure_id uuid [ pk, not null, unique ]
+	dataset_id uuid [ pk, not null ]
+}
+
+Table floor_measure_image {
+	id uuid [ pk, not null, unique ]
+	filename varchar [ not null ]
+	image_data bytea [ not null ]
+	type varchar
+	floor_measure_id uuid [ not null ]
+}
+
+Ref address_point_id_fk {
+	address_point.id < address_point_building_association.address_point_id [ delete: no action, update: no action ]
+}
+
+Ref building_id_fk {
+	building.id < address_point_building_association.building_id [ delete: no action, update: no action ]
+}
+
+Ref floor_measure_building_id_fk {
+	floor_measure.building_id > building.id [ delete: no action, update: no action ]
+}
+
+Ref method_id_fk {
+	method.id < floor_measure.method_id [ delete: no action, update: no action ]
+}
+
+Ref dataset_group_dataset_id_fk {
+	floor_measure_dataset_association.dataset_id > dataset.id [ delete: no action, update: no action ]
+}
+
+Ref floor_measure_dataset_association_floor_measure_id_fk {
+	floor_measure_dataset_association.floor_measure_id > floor_measure.dataset_group_id [ delete: no action, update: no action ]
+}
+
+Ref fk_floor_measure_id_floor_measure_image {
+	floor_measure.id < floor_measure_image.floor_measure_id [ delete: no action, update: no action ]
+}
