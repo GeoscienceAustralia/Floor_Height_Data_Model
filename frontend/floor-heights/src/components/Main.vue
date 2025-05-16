@@ -370,9 +370,9 @@ const filteredFloorMeasures = computed(() => {
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <i class="pi pi-filter" style="font-size: 1rem"></i>
           <MultiSelect
-            v-model="buildingOutlineMethodFilterSelection"
-            :options="buildingOutlineMethodFilterOptions"
-            placeholder="Filter Methods"
+            v-model="buildingOutlineDatasetFilterSelection"
+            :options="buildingOutlineDatasetFilterOptions"
+            placeholder="Filter Datasets"
             class="w-full min-w-0"
             showClear
             />
@@ -380,9 +380,9 @@ const filteredFloorMeasures = computed(() => {
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <i class="pi pi-filter" style="font-size: 1rem"></i>
           <MultiSelect
-            v-model="buildingOutlineDatasetFilterSelection"
-            :options="buildingOutlineDatasetFilterOptions"
-            placeholder="Filter Datasets"
+            v-model="buildingOutlineMethodFilterSelection"
+            :options="buildingOutlineMethodFilterOptions"
+            placeholder="Filter Methods"
             class="w-full min-w-0"
             showClear
             />
