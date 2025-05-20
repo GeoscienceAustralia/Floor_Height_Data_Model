@@ -34,6 +34,7 @@ const clickedFloorMeasures = ref<FloorMeasure[]>([]);
 
 const legendType = ref<String | null>(null);
 const legendObject = ref<Record<string, string>>({});
+const legendObjectLength = computed(() => Object.keys(legendObject.value).length);
 const MAX_NUM_LEGEND_ITEMS: number = 20; // We only have 20 colours to choose from
 const buildingGraduatedFillLegend = ref<GraduatedFillLegend | null>(null);
 const buildingCategorisedFillLegend = ref<String[]>([]);
@@ -538,11 +539,11 @@ const filteredFloorMeasures = computed(() => {
           <span class="font-bold">Legend</span>
         </div>
       </template>
-      <CategorisedLegendComponent v-if="legendType === 'categorised' && buildingCategorisedFillLegend.length <= MAX_NUM_LEGEND_ITEMS" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-      <GraduatedLegendComponent v-else-if="legendType === 'graduated' && buildingCategorisedFillLegend.length <= MAX_NUM_LEGEND_ITEMS" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+      <CategorisedLegendComponent v-if="legendType === 'categorised' && legendObjectLength <= MAX_NUM_LEGEND_ITEMS" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+      <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
     </Panel>
   </div>
-  <div v-if="showLegend && buildingCategorisedFillLegend.length == 0" id="legend">
+  <div v-if="showLegend && legendObjectLength == 0" id="legend">
     <Panel class="flex-none">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
@@ -556,7 +557,7 @@ const filteredFloorMeasures = computed(() => {
         </div>
     </Panel>
   </div>
-  <div v-if="showLegend && buildingCategorisedFillLegend.length > MAX_NUM_LEGEND_ITEMS" id="legend">
+  <div v-if="showLegend && legendObjectLength > MAX_NUM_LEGEND_ITEMS" id="legend">
     <Panel class="flex-none">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
