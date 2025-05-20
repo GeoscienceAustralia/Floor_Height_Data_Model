@@ -34,7 +34,7 @@ const clickedFloorMeasures = ref<FloorMeasure[]>([]);
 
 const legendType = ref<String | null>(null);
 const legendObject = ref<Record<string, string>>({});
-const legendObjectLength = computed(() => Object.keys(legendObject.value).length);
+const MAX_NUM_LEGEND_ITEMS: number = 20; // We only have 20 colours to choose from
 const buildingGraduatedFillLegend = ref<GraduatedFillLegend | null>(null);
 const buildingCategorisedFillLegend = ref<String[]>([]);
 
@@ -149,7 +149,13 @@ watch(
       if (buildingCategorisedFillLegend.value.length == 0) {
         legendObject.value = {}
         showLegend.value = true;
-        return
+        return;
+      }
+      // Check if the number of legend items exceed the maximum
+      if (buildingCategorisedFillLegend.value.length > MAX_NUM_LEGEND_ITEMS) {
+        map.value.resetBuildingTiles();
+        showLegend.value = true;
+        return;
       }
       const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
       map.value.setBuildingCategorisedFill(methods, datasets, colorMap, key, locationBounds);
@@ -532,11 +538,11 @@ const filteredFloorMeasures = computed(() => {
           <span class="font-bold">Legend</span>
         </div>
       </template>
-      <CategorisedLegendComponent v-if="legendType === 'categorised'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-      <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+      <CategorisedLegendComponent v-if="legendType === 'categorised' && buildingCategorisedFillLegend.length <= MAX_NUM_LEGEND_ITEMS" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
+      <GraduatedLegendComponent v-else-if="legendType === 'graduated' && buildingCategorisedFillLegend.length <= MAX_NUM_LEGEND_ITEMS" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
     </Panel>
   </div>
-  <div v-if="showLegend && legendObjectLength == 0" id="legend">
+  <div v-if="showLegend && buildingCategorisedFillLegend.length == 0" id="legend">
     <Panel class="flex-none">
       <template #header>
         <div class="flex items-center gap-2" style="margin-bottom: -10px;">
@@ -546,7 +552,21 @@ const filteredFloorMeasures = computed(() => {
         </template>
         <div class="flex flex-col items-center justify-center gap-2">
           <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-          <div class="opacity-50">No data found for the selected filters.</div>
+          <div class="text-center opacity-50">No data found for the selected filters.</div>
+        </div>
+    </Panel>
+  </div>
+  <div v-if="showLegend && buildingCategorisedFillLegend.length > MAX_NUM_LEGEND_ITEMS" id="legend">
+    <Panel class="flex-none">
+      <template #header>
+        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
+          <i class="pi pi-list" style="font-size: 1rem"></i>
+          <span class="font-bold">Legend</span>
+        </div>
+        </template>
+        <div class="flex flex-col items-center justify-center gap-2">
+          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+          <div class="text-center opacity-50">Too many items, try filtering by datasets or methods.</div>
         </div>
     </Panel>
   </div>  
