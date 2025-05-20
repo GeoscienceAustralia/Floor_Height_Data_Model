@@ -14,9 +14,10 @@ const TILESERVER_LAYER_DETAILS = [
 
 const COLOR_ADDRESS_POINT: string = '#3887BE';
 const COLOR_BUILDING: string = '#F6511D';
-const COLOR_BUILDING_GRADIENT_START: string = '#FFBEA8';
-const COLOR_BUILDING_GRADIENT_END: string = '#FF4B14';
 const COLOR_ADDRESS_BUILDING_LINK: string = '#3887BE';
+
+// Matplotlib magma gradient - https://matplotlib.org/stable/users/explain/colors/colormaps.html#sequential
+const COLOR_BUILDING_GRADIENT_CLASSES: string[] = ['#FED395', '#F1605D', '#331067'];
 
 // Matplotlib tab20 palette - https://matplotlib.org/stable/users/explain/colors/colormaps.html#qualitative
 const COLOR_BUILDING_CATEGORISED_CLASSES: string[] = [
@@ -160,11 +161,10 @@ export default class FloorHeightsMap {
 
   generateGraduatedColorMap = (min: number, max: number) => {
     const colorMap = [
-      min,
-      COLOR_BUILDING_GRADIENT_START,
-      max,
-      COLOR_BUILDING_GRADIENT_END
-    ]
+      min, COLOR_BUILDING_GRADIENT_CLASSES[0],
+      Math.abs(min+max)/2, COLOR_BUILDING_GRADIENT_CLASSES[1],
+      max, COLOR_BUILDING_GRADIENT_CLASSES[2]
+    ];
     return colorMap;
   }
 

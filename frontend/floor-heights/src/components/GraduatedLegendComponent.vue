@@ -13,12 +13,13 @@ const props = defineProps<{
     <div
       class="gradient-box"
       :style="{
-        background: `linear-gradient(to right, ${Object.values(props.legendObject)[0]}, ${Object.values(props.legendObject)[1]})`,
+        background: `linear-gradient(to right, ${Object.values(props.legendObject).join(', ')})`,
       }"
     ></div>
     <div class="gradient-label">
       <span class="label">{{ Number(Object.keys(props.legendObject)[0]).toFixed(1) }}</span>
       <span class="label">{{ Number(Object.keys(props.legendObject)[1]).toFixed(1) }}</span>
+      <span class="label">{{ Number(Object.keys(props.legendObject)[2]).toFixed(1) }}</span>
     </div>
   </div>
 </template>
