@@ -18,6 +18,14 @@ const COLOR_BUILDING_GRADIENT_START: string = '#FFBEA8';
 const COLOR_BUILDING_GRADIENT_END: string = '#FF4B14';
 const COLOR_ADDRESS_BUILDING_LINK: string = '#3887BE';
 
+// Matplotlib tab20 palette - https://matplotlib.org/stable/users/explain/colors/colormaps.html#qualitative
+const COLOR_BUILDING_CATEGORISED_CLASSES: string[] = [
+  '#1F77B4', '#FF7F0E', '#2CA02C', '#D62728', '#9467BD',
+  '#8C564B', '#E377C2', '#7F7F7F', '#BCBD22', '#17BECF',
+  '#AEC7E8', '#FFBB78', '#98DF8A', '#FF9896', '#C5B0D5',
+  '#C49C94', '#F7B6D2', '#C7C7C7', '#DBDB8D', '#9EDAE5'
+];
+
 export default class FloorHeightsMap {
   map: Map | null;
   emitter: EventEmitter;
@@ -109,28 +117,10 @@ export default class FloorHeightsMap {
     });
   }
 
-  generateColor = (str: string) => {
-    const elements = str.split(',');
-  
-    const elementHashes = elements.map((element) => {
-      let hash = 0;
-      for (let i = 0; i < element.length; i++) {
-        hash = element.charCodeAt(i) + ((hash << 5) - hash);
-        hash = hash & hash;
-      }
-      return Math.abs(hash);
-    });
-  
-    const combinedHash = elementHashes.reduce((acc, h) => acc ^ h, 0);
-    const hue = combinedHash % 360;
-  
-    return `hsl(${hue}, 70%, 50%)`;
-  }
-
   generateCategorisedColorMap = (attributes: string[]) => {
-    // Generate a unique colour for each attribute
-    const attributeColors = attributes.reduce((acc, attribute) => {
-      acc[attribute] = this.generateColor(attribute); // Assign a colour based on the attribute name
+    // Generate a unique colour for each attribute using the predefined colour array
+    const attributeColors = attributes.reduce((acc, attribute, index) => {
+      acc[attribute] = COLOR_BUILDING_CATEGORISED_CLASSES[index % COLOR_BUILDING_CATEGORISED_CLASSES.length];
       return acc;
     }, {} as Record<string, string>);
   
