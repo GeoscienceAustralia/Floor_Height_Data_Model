@@ -133,7 +133,7 @@ watch(
     if (fillOption === 'Floor Height') {
       await fetchGraduatedLegendValues(methods, datasets, locationBounds);
       // Check for an empty legend
-      if (!buildingGraduatedFillLegend.value?.min || !buildingGraduatedFillLegend.value?.min) {
+      if (buildingGraduatedFillLegend.value?.min == null || buildingGraduatedFillLegend.value?.max == null) {
         legendObject.value = {}
         showLegend.value = true;
         return;
