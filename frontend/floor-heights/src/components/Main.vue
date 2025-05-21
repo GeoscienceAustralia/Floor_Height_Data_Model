@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import axios from 'axios';
 import { LngLatBoundsLike, LngLat } from 'maplibre-gl';
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
+import MultiSelect from 'primevue/multiselect';
 import Panel from 'primevue/panel';
 import ScrollPanel from 'primevue/scrollpanel';
 import { useToast } from "primevue/usetoast";
 import FloorHeightsMap from './FloorHeightsMap';
-import {FloorMeasure, AddressPoint, Building, MapLocation} from './types';
+import {FloorMeasure, AddressPoint, Building, MapLocation, GraduatedFillLegend} from './types';
 import FloorMeasureComponent from './FloorMeasureComponent.vue';
 import MenuComponent from './MenuComponent.vue';
 import ImageWindowComponent from './ImageWindowComponent.vue';
-import CategorisedLegendComponent from './CategorisedLegendComponent.vue';
-import GraduatedLegendComponent from './GraduatedLegendComponent.vue';
+import LegendComponent from './LegendComponent.vue';
 
 const toast = useToast();
 
@@ -33,8 +33,27 @@ const clickedFloorMeasures = ref<FloorMeasure[]>([]);
 
 const legendType = ref<String | null>(null);
 const legendObject = ref<Record<string, string>>({});
-const buildingGraduatedFillLegend = ref<String[]>([]);
+const MAX_NUM_LEGEND_ITEMS: number = 20; // We only have 20 colours to choose from
+const buildingGraduatedFillLegend = ref<GraduatedFillLegend | null>(null);
 const buildingCategorisedFillLegend = ref<String[]>([]);
+const legendState = computed(() => {
+  if (!showBuildingOutlines.value) return null;
+
+  if (buildingOutlineFillSelection.value === "Floor Height") {
+    if (buildingGraduatedFillLegend.value?.min == null || buildingGraduatedFillLegend.value?.max == null) {
+      return { state: "no-data", message: "No data found for the selected filters." };
+    }
+  } else if (buildingOutlineFillSelection.value == "Dataset" || buildingOutlineFillSelection.value == "Method") {
+    if (buildingCategorisedFillLegend.value.length == 0) {
+      return { state: "no-data", message: "No data found for the selected filters." };
+    }
+    if (buildingCategorisedFillLegend.value.length > MAX_NUM_LEGEND_ITEMS) {
+      return { state: "too-many-items", message: "Too many items, try filtering by datasets or methods." };
+    }
+  }
+
+  return { state: "valid" };
+});
 
 // Define options for the fill dropdown
 const buildingOutlineFillOptions: string[] = [
@@ -45,8 +64,8 @@ const buildingOutlineFillOptions: string[] = [
 
 // Define locations for the menu dropdown
 const mapLocationOptions: MapLocation[] = [
-  { label: 'Wagga Wagga, NSW', coordinates: new LngLat(147.360, -35.120) },
-  { label: 'Launceston, TAS', coordinates: new LngLat(147.144, -41.434) },
+  { label: 'Wagga Wagga, NSW', coordinates: new LngLat(147.370, -35.120) },
+  { label: 'Launceston, TAS', coordinates: new LngLat(147.144, -41.422) },
   { label: 'Tweed Heads, NSW', coordinates: new LngLat(153.537, -28.205) },
 ];
 
@@ -92,66 +111,47 @@ watch(showBuildingOutlines, async (showBuildingOutlines, _) => {
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, methods]) => {
-  if (showBuildingOutlines) {
-    map.value.setMethodFilter(methods);
+watch(buildingOutlineMethodFilterSelection, (newFilter) => {
+  if (newFilter == null) {
+    resetMethodFilters();
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection], async ([showBuildingOutlines, datasets]) => {
-  if (showBuildingOutlines) {
-    map.value.setDatasetFilter(datasets);
+watch(buildingOutlineDatasetFilterSelection, (newFilter) => {
+  if (newFilter == null) {
+    resetDatasetFilters();
   }
 });
 
-watch([showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection, selectedMapLocation], async ([showBuildingOutlines, methods, datasets, fillOption, selectedMapLocation]) => {
+watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection, buildingOutlineMethodFilterSelection], async ([showBuildingOutlines, datasets, methods]) => {
   if (showBuildingOutlines) {
-    // Sort so that the dropdown options match the API request
-    methods.sort()
-    datasets.sort()
+    map.value.setBuildingFilter(datasets, methods);
+  }
+});
 
-    // If a method filter isn't applied, set to all values
-    if (fillOption && (!methods || methods.length === 0)) {
-      methods = buildingOutlineMethodFilterOptions.value
-    }
+watch([buildingOutlineFillSelection], ([newSelection]) => {
+  if (newSelection == null) {
+    map.value.resetBuildingTiles();
+    showLegend.value = false;
+  }
+});
 
-    // If a dataset filter isn't applied, set to all values
-    if (fillOption && (!datasets || datasets.length === 0)) {
-      datasets = buildingOutlineDatasetFilterOptions.value
-    }
-    
-    if (fillOption) {
-      if (fillOption === 'Floor Height') {
-        const locationBounds = generateLocationBounds(selectedMapLocation)      
-        await fetchGraduatedLegendValues(methods, datasets, locationBounds);
-        // @ts-ignore
-        const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value.min, buildingGraduatedFillLegend.value.max)
-        map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
-        createGraduatedLegendObject(colorMap)
-        legendType.value = "graduated";
-      }
-      if (fillOption == 'Dataset') {
-        const locationBounds = generateLocationBounds(selectedMapLocation)
-        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
-        const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
-        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'dataset_names', locationBounds);
-        createCategorisedLegendObject(colorMap)
-        legendType.value = "categorised";
-      }
-      if (fillOption === 'Method') {
-        const locationBounds = generateLocationBounds(selectedMapLocation)
-        await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
-        const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
-        map.value.setBuildingCategorisedFill(methods, datasets, colorMap, 'method_names', locationBounds);
-        createCategorisedLegendObject(colorMap)
-        legendType.value = "categorised";
-      }
-      showLegend.value = true;
+watch([buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection, selectedMapLocation], async ([methods, datasets, fillOption, selectedMapLocation]) => {
+  // Sort so that the dropdown options match the API request
+  methods.sort()
+  datasets.sort()
 
-    } else {
-      map.value.resetBuildingTiles();
-      showLegend.value = false;
-    }
+  // If a method or dataset filter isn't applied, set to all values
+  methods = methods.length ? methods : buildingOutlineMethodFilterOptions.value;
+  datasets = datasets.length ? datasets : buildingOutlineDatasetFilterOptions.value;
+
+  const locationBounds = generateLocationBounds(selectedMapLocation)
+
+  if (fillOption === 'Floor Height') {
+    await setGraduatedFill(methods, datasets, locationBounds);
+  }
+  if (fillOption === 'Dataset' || fillOption === 'Method') {
+    await setCategorisedFill(methods, datasets, locationBounds, fillOption);
   }
 });
 
@@ -170,13 +170,12 @@ const onBuildingClicked = (clickedObject: any) => {
   fetchFloorMeasures(clickedBuilding.value?.id);
 };
 
-const fetchFloorMeasures = async (building_id: string) => {
+const fetchFloorMeasures = async (buildingId: string) => {
   try {
-    const response = await axios.get<FloorMeasure[]>(`api/floor-height-data/${building_id}`);
+    const response = await axios.get<FloorMeasure[]>(`api/floor-height-data/${buildingId}`);
     clickedFloorMeasures.value = response.data
-    console.log(clickedFloorMeasures.value);
   } catch (error) {
-    console.error(`Failed to fetch floor measures for building id ${building_id}`);
+    console.error(`Failed to fetch floor measures for building id ${buildingId}`);
     toast.add(
       {
         severity: 'error',
@@ -196,7 +195,7 @@ const fetchGraduatedLegendValues = async (methods: String[], datasets: String[],
   };
 
   try {
-    buildingGraduatedFillLegend.value = (await axios.get<String[]>(`api/legend-graduated-values/?${new URLSearchParams(queryParams)}`)).data;
+    buildingGraduatedFillLegend.value = (await axios.get<GraduatedFillLegend>(`api/legend-graduated-values/?${new URLSearchParams(queryParams)}`)).data;
   } catch (error) {
     console.error(`Failed to fetch legend values`);
     toast.add({
@@ -240,16 +239,60 @@ const createCategorisedLegendObject = (colorMap: (number | string)[]) => {
   legendObject.value = legend;
 };
 
-const createGraduatedLegendObject = (colorMap: (number | string)[]) => {
+const createGraduatedLegendObject = (colorMap: (number | string | null)[]) => {
   const legend: Record<number, string> = {};
 
   for (let i = 0; i < colorMap.length - 1; i += 2) {
-    const label = colorMap[i] as number;
+    const label = colorMap[i] as number | null;
     const color = colorMap[i + 1] as string;
+
+    // If a null label is found, clear the legend and return
+    if (label === null) {
+      legendObject.value = {};
+      return;
+    }
+
     legend[label] = color;
   }
 
   legendObject.value = legend;
+};
+
+const setGraduatedFill = async (methods: String[], datasets: String[], locationBounds: LngLatBoundsLike) => {
+  await fetchGraduatedLegendValues(methods, datasets, locationBounds);
+  // Check for an empty legend
+  if (buildingGraduatedFillLegend.value?.min == null || buildingGraduatedFillLegend.value?.max == null) {
+    map.value.resetBuildingTiles();
+    showLegend.value = true;
+    return;
+  }
+  const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value?.min, buildingGraduatedFillLegend.value?.max)
+  map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
+  createGraduatedLegendObject(colorMap)
+  legendType.value = "graduated";
+  showLegend.value = true;
+};
+
+const setCategorisedFill = async (methods: String[], datasets: String[], locationBounds: LngLatBoundsLike, fillOption: String) => {
+  const table = fillOption.toLowerCase() === 'dataset' ? 'dataset_names' : 'method_names';
+  await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
+  // Check for an empty legend
+  if (buildingCategorisedFillLegend.value.length === 0) {
+    map.value.resetBuildingTiles();
+    showLegend.value = true;
+    return;
+  }
+  // Check if the number of legend items exceed the maximum
+  if (buildingCategorisedFillLegend.value.length > MAX_NUM_LEGEND_ITEMS) {
+    map.value.resetBuildingTiles();
+    showLegend.value = true;
+    return;
+  }
+  const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
+  map.value.setBuildingCategorisedFill(methods, datasets, colorMap, table, locationBounds);
+  createCategorisedLegendObject(colorMap)
+  legendType.value = "categorised";
+  showLegend.value = true;
 };
 
 const generateLocationBounds = (location: MapLocation) => {
@@ -264,10 +307,43 @@ const generateLocationBounds = (location: MapLocation) => {
 const updateMapLocation = (newLocation: MapLocation) => {
   if (map) {
     map.value.setCenter(newLocation.coordinates);
-    map.value.setZoom(12);
+    map.value.setZoom(13);
     selectedMapLocation.value = newLocation;
   }
 };
+
+const resetMethodFilters = () => {
+  buildingOutlineMethodFilterSelection.value = []
+}
+
+const resetDatasetFilters = () => {
+  buildingOutlineDatasetFilterSelection.value = []
+}
+
+const filteredFloorMeasures = computed(() => {
+  // If no filters are selected, return all floor measures
+  if (
+    !buildingOutlineMethodFilterSelection.value.length &&
+    !buildingOutlineDatasetFilterSelection.value.length
+  ) {
+    return clickedFloorMeasures.value;
+  }
+
+  // Filter floor measures based on the selected methods and datasets
+  return clickedFloorMeasures.value.filter((measure) => {
+    const matchesMethod =
+      !buildingOutlineMethodFilterSelection.value.length ||
+      buildingOutlineMethodFilterSelection.value.includes(measure.method);
+
+    const matchesDataset =
+      !buildingOutlineDatasetFilterSelection.value.length ||
+      buildingOutlineDatasetFilterSelection.value.some((selectedDataset) =>
+        measure.datasets.includes(selectedDataset.toString())
+      );
+
+    return matchesMethod && matchesDataset;
+  });
+});
 </script>
 
 <template>
@@ -290,19 +366,16 @@ const updateMapLocation = (newLocation: MapLocation) => {
         </div>
       </template>
       <div class="flex flex-col gap-1">
-        <div>
-          Select layers to show in map
-        </div>
         <div class="flex items-center pl-2">
           <div class="items-center">
             <Checkbox inputId="showAddressPoints" v-model="showAddressPoints" :binary="true" />
-            <label for="showAddressPoints" class="ml-2"> Address Points </label>
+            <label for="showAddressPoints" class="ml-2">Address Points</label>
           </div>
         </div>
         <div class="flex pl-2 items-center justify-between">
           <div class="items-center">
             <Checkbox inputId="showBuildingOutlines" v-model="showBuildingOutlines" :binary="true" />
-            <label for="showBuildingOutlines" class="ml-2"> Building Outlines </label>
+            <label for="showBuildingOutlines" class="ml-2">Building Outlines</label>
           </div>
           <ToggleButton
             v-model="showBuildingOutlineOptions"
@@ -328,35 +401,39 @@ const updateMapLocation = (newLocation: MapLocation) => {
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <i class="pi pi-filter" style="font-size: 1rem"></i>
           <MultiSelect
-            v-model="buildingOutlineMethodFilterSelection"
-            :options="buildingOutlineMethodFilterOptions"
-            placeholder="Filter Methods"
-            class="w-full min-w-0"
-          />
-        </div>
-        <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
-          <i class="pi pi-filter" style="font-size: 1rem"></i>
-          <MultiSelect
             v-model="buildingOutlineDatasetFilterSelection"
             :options="buildingOutlineDatasetFilterOptions"
             placeholder="Filter Datasets"
             class="w-full min-w-0"
-          />
+            @change="resetMethodFilters"
+            showClear
+            />
+        </div>
+        <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
+          <i class="pi pi-filter" style="font-size: 1rem"></i>
+          <MultiSelect
+            v-model="buildingOutlineMethodFilterSelection"
+            :options="buildingOutlineMethodFilterOptions"
+            placeholder="Filter Methods"
+            class="w-full min-w-0"
+            @change="resetDatasetFilters"
+            showClear
+            />
         </div>
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <i class="pi pi-palette" style="font-size: 1rem"></i>
-          <Select
-            v-model="buildingOutlineFillSelection"
-            :options="buildingOutlineFillOptions"
-            placeholder="Fill Variable"
-            showClear
-            class="w-full min-w-0"
-          />
+            <Select
+              v-model="buildingOutlineFillSelection"
+              :options="buildingOutlineFillOptions"
+              placeholder="Fill Variable"
+              class="w-full min-w-0"
+              showClear
+              />
         </div>
         <div v-if="showBuildingOutlineOptions" class="flex items-center justify-between gap-2 pl-6">
           <div class="items-center">
             <i class="pi pi-image" style="font-size: 1rem"></i>
-            <label for="showImageWindow" class="ml-2"> Show Image Window </label>
+            <label for="showImageWindow" class="ml-2">Show Image Window</label>
           </div>
           <ToggleSwitch v-model="showImageWindow" />
         </div>
@@ -372,11 +449,11 @@ const updateMapLocation = (newLocation: MapLocation) => {
       </template>
       <div class="flex flex-col gap-1">
         <div class="flex flex-col gap-0">
-          <div class="subheading"> Address: </div>
+          <div class="subheading">Address:</div>
           <div> {{ clickedAddressPoint.address }} </div>
         </div>
         <div class="flex flex-col gap-0">
-          <div class="subheading"> GNAF ID: </div>
+          <div class="subheading">GNAF ID:</div>
           <div> {{ clickedAddressPoint.gnaf_id }} </div>
         </div>
       </div>
@@ -391,7 +468,7 @@ const updateMapLocation = (newLocation: MapLocation) => {
       </template>
       <div class="flex flex-col gap-1">
         <div class="flex flex-col gap-0">
-          <div class="subheading"> Absolute Height (m) </div>
+          <div class="subheading">Absolute Height (m)</div>
           <div class="flex flex-row w-full">
             <div class="basis-1/2"> min: {{ clickedBuilding.min_height_ahd.toFixed(3) }} </div>
             <div class="basis-1/2"> max: {{ clickedBuilding.max_height_ahd.toFixed(3) }} </div>
@@ -401,24 +478,18 @@ const updateMapLocation = (newLocation: MapLocation) => {
     </Panel>
 
     <Panel class="flex-none" v-if="!(clickedAddressPoint || clickedBuilding)" >
-      <div class="flex flex-col gap-2">
-        <div class="flex flex-row w-full items-center justify-center content-center gap-2">
-          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-        </div>
-        <div class="flex flex-col gap-1">
-          <div class="opacity-50"> Select address point or building outline to show floor height data. </div>
-        </div>
+      <div class="flex flex-col items-center justify-center gap-2">
+        <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+        <div class="opacity-50"> Select address point or building outline to show floor height data. </div>
       </div>
     </Panel>
 
-    <Panel class="flex-none" v-if="clickedBuilding && clickedFloorMeasures.length == 0" >
+    <Panel class="flex-none text-center items-center" v-if="clickedBuilding && clickedFloorMeasures.length == 0" >
       <div class="flex flex-col gap-2">
-        <div class="flex flex-row w-full items-center justify-center content-center gap-2">
+        <div class="flex flex-col items-center justify-center gap-2">
           <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
         </div>
-        <div class="flex flex-col gap-1">
-          <div class="opacity-50"> No floor measures found for this building </div>
-        </div>
+        <div class="opacity-50">No floor measures found for this building.</div>
       </div>
     </Panel>
 
@@ -456,35 +527,44 @@ const updateMapLocation = (newLocation: MapLocation) => {
       <div class="flex flex-1 flex-col min-h-0">
         <div class="flex max-h-full min-h-0">
           <ScrollPanel class="flex-1 max-h-full w-full" style="height: unset;">
-            <div>
-              <FloorMeasureComponent v-for="(fm, index) in clickedFloorMeasures" :floorMeasure="fm" :isLast="index === clickedFloorMeasures.length - 1"></FloorMeasureComponent>
-            </div>
-          </ScrollPanel>
+          <div>
+            <template v-if="filteredFloorMeasures.length > 0">
+              <FloorMeasureComponent
+                v-for="(fm, index) in filteredFloorMeasures"
+                :key="fm.id"
+                :floorMeasure="fm"
+                :isLast="index === filteredFloorMeasures.length - 1"
+              />
+            </template>
+            <template v-else>
+              <div class="flex flex-col items-center justify-center gap-2">
+                <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+                <div class="opacity-50">No floor measures found for the selected filters.</div>
+              </div>
+            </template>
+          </div>
+        </ScrollPanel>
         </div>
       </div>
     </Panel>
   </div>
 
   <MenuComponent v-model="selectedMapLocation" :options="mapLocationOptions" @update-map-location="updateMapLocation"/>
-
   <ImageWindowComponent v-if="showImageWindow" :building="clickedBuilding" @close-image-window="showImageWindow = !showImageWindow"/>
-  
-  <div v-if="showLegend && !showImageWindow" id="legend">
-  <Panel class="flex-none">
-    <template #header>
-      <div class="flex items-center gap-2" style="margin-bottom: -10px;">
-        <i class="pi pi-list" style="font-size: 1rem"></i>
-        <span class="font-bold">Legend</span>
-      </div>
-    </template>
-    <CategorisedLegendComponent v-if="legendType === 'categorised'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-    <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-  </Panel>
-  </div>
-
+  <LegendComponent v-if="showLegend" :legendType="legendType" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection" :legendState="legendState"/>
 </template>
 
 <style scoped>
+:deep(.p-multiselect-clear-icon) {
+  background-color: var(--p-surface-0);
+  margin-right: -8px;
+}
+
+:deep(.p-select-clear-icon) {
+  background-color: var(--p-surface-0);
+  margin-right: -8px;
+}
+
 #map {
   height: 100vh;
 }
@@ -496,13 +576,6 @@ const updateMapLocation = (newLocation: MapLocation) => {
   max-height: calc(100vh - 40px);
   width: 400px;
   z-index: 1; /* Ensures it stays above the map */
-}
-
-#legend {
-  position: absolute;
-  bottom: 20px;
-  right: 50px;
-  width: 400px;
 }
 
 .subheading {
