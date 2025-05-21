@@ -4,7 +4,6 @@ const props = defineProps<{
   legendObject: Record<string, string>;
   fillOption: String | null;
 }>();
-
 </script>
 
 <template>

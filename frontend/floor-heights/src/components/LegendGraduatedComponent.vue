@@ -4,18 +4,14 @@ const props = defineProps<{
   legendObject: Record<string, string>;
   fillOption: String | null;
 }>();
-
 </script>
 
 <template>
   <span class="subheading">{{ fillOption }} (m)</span>
   <div class="legend-item">
-    <div
-      class="gradient-box"
-      :style="{
-        background: `linear-gradient(to right, ${Object.values(props.legendObject).join(', ')})`,
-      }"
-    ></div>
+    <div class="gradient-box" :style="{
+      background: `linear-gradient(to right, ${Object.values(props.legendObject).join(', ')})`,
+    }"></div>
     <div class="gradient-label">
       <span class="label">{{ Number(Object.keys(props.legendObject)[0]).toFixed(1) }}</span>
       <span class="label">{{ Number(Object.keys(props.legendObject)[1]).toFixed(1) }}</span>

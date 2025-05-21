@@ -11,8 +11,7 @@ import {FloorMeasure, AddressPoint, Building, MapLocation, GraduatedFillLegend} 
 import FloorMeasureComponent from './FloorMeasureComponent.vue';
 import MenuComponent from './MenuComponent.vue';
 import ImageWindowComponent from './ImageWindowComponent.vue';
-import CategorisedLegendComponent from './CategorisedLegendComponent.vue';
-import GraduatedLegendComponent from './GraduatedLegendComponent.vue';
+import LegendComponent from './LegendComponent.vue';
 
 const toast = useToast();
 
@@ -34,10 +33,27 @@ const clickedFloorMeasures = ref<FloorMeasure[]>([]);
 
 const legendType = ref<String | null>(null);
 const legendObject = ref<Record<string, string>>({});
-const legendObjectLength = computed(() => Object.keys(legendObject.value).length);
 const MAX_NUM_LEGEND_ITEMS: number = 20; // We only have 20 colours to choose from
 const buildingGraduatedFillLegend = ref<GraduatedFillLegend | null>(null);
 const buildingCategorisedFillLegend = ref<String[]>([]);
+const legendState = computed(() => {
+  if (!showBuildingOutlines.value) return null;
+
+  if (buildingOutlineFillSelection.value === "Floor Height") {
+    if (buildingGraduatedFillLegend.value?.min == null || buildingGraduatedFillLegend.value?.max == null) {
+      return { state: "no-data", message: "No data found for the selected filters." };
+    }
+  } else if (buildingOutlineFillSelection.value == "Dataset" || buildingOutlineFillSelection.value == "Method") {
+    if (buildingCategorisedFillLegend.value.length == 0) {
+      return { state: "no-data", message: "No data found for the selected filters." };
+    }
+    if (buildingCategorisedFillLegend.value.length > MAX_NUM_LEGEND_ITEMS) {
+      return { state: "too-many-items", message: "Too many items, try filtering by datasets or methods." };
+    }
+  }
+
+  return { state: "valid" };
+});
 
 // Define options for the fill dropdown
 const buildingOutlineFillOptions: string[] = [
@@ -113,60 +129,29 @@ watch([showBuildingOutlines, buildingOutlineDatasetFilterSelection, buildingOutl
   }
 });
 
-watch(
-  [showBuildingOutlines, buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection, selectedMapLocation],
-  async ([showBuildingOutlines, methods, datasets, fillOption, selectedMapLocation]) => {
-    if (!showBuildingOutlines) return;
+watch([buildingOutlineFillSelection], ([newSelection]) => {
+  if (newSelection == null) {
+    map.value.resetBuildingTiles();
+    showLegend.value = false;
+  }
+});
 
+watch([buildingOutlineMethodFilterSelection, buildingOutlineDatasetFilterSelection, buildingOutlineFillSelection, selectedMapLocation], async ([methods, datasets, fillOption, selectedMapLocation]) => {
   // Sort so that the dropdown options match the API request
   methods.sort()
   datasets.sort()
 
-  if (fillOption) {
+  // If a method or dataset filter isn't applied, set to all values
+  methods = methods.length ? methods : buildingOutlineMethodFilterOptions.value;
+  datasets = datasets.length ? datasets : buildingOutlineDatasetFilterOptions.value;
 
-    // If a method or dataset filter isn't applied, set to all values
-    methods = methods.length ? methods : buildingOutlineMethodFilterOptions.value;
-    datasets = datasets.length ? datasets : buildingOutlineDatasetFilterOptions.value;
+  const locationBounds = generateLocationBounds(selectedMapLocation)
 
-    const locationBounds = generateLocationBounds(selectedMapLocation)
-
-    if (fillOption === 'Floor Height') {
-      await fetchGraduatedLegendValues(methods, datasets, locationBounds);
-      // Check for an empty legend
-      if (buildingGraduatedFillLegend.value?.min == null || buildingGraduatedFillLegend.value?.max == null) {
-        legendObject.value = {}
-        showLegend.value = true;
-        return;
-      }
-      const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value?.min, buildingGraduatedFillLegend.value?.max)
-      map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
-      createGraduatedLegendObject(colorMap)
-      legendType.value = "graduated";
-    }
-    if (fillOption == 'Dataset' || fillOption == 'Method') {
-      const key = fillOption.toLowerCase() === 'dataset' ? 'dataset_names' : 'method_names';
-      await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
-      // Check for an empty legend
-      if (buildingCategorisedFillLegend.value.length == 0) {
-        legendObject.value = {}
-        showLegend.value = true;
-        return;
-      }
-      // Check if the number of legend items exceed the maximum
-      if (buildingCategorisedFillLegend.value.length > MAX_NUM_LEGEND_ITEMS) {
-        map.value.resetBuildingTiles();
-        showLegend.value = true;
-        return;
-      }
-      const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
-      map.value.setBuildingCategorisedFill(methods, datasets, colorMap, key, locationBounds);
-      createCategorisedLegendObject(colorMap)
-      legendType.value = "categorised";
-    }
-    showLegend.value = true;
-  } else {
-    map.value.resetBuildingTiles();
-    showLegend.value = false;
+  if (fillOption === 'Floor Height') {
+    await setGraduatedFill(methods, datasets, locationBounds);
+  }
+  if (fillOption === 'Dataset' || fillOption === 'Method') {
+    await setCategorisedFill(methods, datasets, locationBounds, fillOption);
   }
 });
 
@@ -271,6 +256,43 @@ const createGraduatedLegendObject = (colorMap: (number | string | null)[]) => {
   }
 
   legendObject.value = legend;
+};
+
+const setGraduatedFill = async (methods: String[], datasets: String[], locationBounds: LngLatBoundsLike) => {
+  await fetchGraduatedLegendValues(methods, datasets, locationBounds);
+  // Check for an empty legend
+  if (buildingGraduatedFillLegend.value?.min == null || buildingGraduatedFillLegend.value?.max == null) {
+    map.value.resetBuildingTiles();
+    showLegend.value = true;
+    return;
+  }
+  const colorMap = map.value.generateGraduatedColorMap(buildingGraduatedFillLegend.value?.min, buildingGraduatedFillLegend.value?.max)
+  map.value.setBuildingFloorHeightGraduatedFill(methods, datasets, colorMap, locationBounds);
+  createGraduatedLegendObject(colorMap)
+  legendType.value = "graduated";
+  showLegend.value = true;
+};
+
+const setCategorisedFill = async (methods: String[], datasets: String[], locationBounds: LngLatBoundsLike, fillOption: String) => {
+  const table = fillOption.toLowerCase() === 'dataset' ? 'dataset_names' : 'method_names';
+  await fetchCategorisedLegendValues(fillOption.toLowerCase(), methods, datasets, locationBounds);
+  // Check for an empty legend
+  if (buildingCategorisedFillLegend.value.length === 0) {
+    map.value.resetBuildingTiles();
+    showLegend.value = true;
+    return;
+  }
+  // Check if the number of legend items exceed the maximum
+  if (buildingCategorisedFillLegend.value.length > MAX_NUM_LEGEND_ITEMS) {
+    map.value.resetBuildingTiles();
+    showLegend.value = true;
+    return;
+  }
+  const colorMap = map.value.generateCategorisedColorMap(buildingCategorisedFillLegend.value)
+  map.value.setBuildingCategorisedFill(methods, datasets, colorMap, table, locationBounds);
+  createCategorisedLegendObject(colorMap)
+  legendType.value = "categorised";
+  showLegend.value = true;
 };
 
 const generateLocationBounds = (location: MapLocation) => {
@@ -528,49 +550,8 @@ const filteredFloorMeasures = computed(() => {
   </div>
 
   <MenuComponent v-model="selectedMapLocation" :options="mapLocationOptions" @update-map-location="updateMapLocation"/>
-
   <ImageWindowComponent v-if="showImageWindow" :building="clickedBuilding" @close-image-window="showImageWindow = !showImageWindow"/>
-  
-  <div v-if="showLegend && !showImageWindow" id="legend">
-    <Panel class="flex-none">
-      <template #header>
-        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
-          <i class="pi pi-list" style="font-size: 1rem"></i>
-          <span class="font-bold">Legend</span>
-        </div>
-      </template>
-      <CategorisedLegendComponent v-if="legendType === 'categorised' && legendObjectLength <= MAX_NUM_LEGEND_ITEMS" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-      <GraduatedLegendComponent v-else-if="legendType === 'graduated'" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection"/>
-    </Panel>
-  </div>
-  <div v-if="showLegend && legendObjectLength == 0" id="legend">
-    <Panel class="flex-none">
-      <template #header>
-        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
-          <i class="pi pi-list" style="font-size: 1rem"></i>
-          <span class="font-bold">Legend</span>
-        </div>
-        </template>
-        <div class="flex flex-col items-center justify-center gap-2">
-          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-          <div class="text-center opacity-50">No data found for the selected filters.</div>
-        </div>
-    </Panel>
-  </div>
-  <div v-if="showLegend && legendObjectLength > MAX_NUM_LEGEND_ITEMS" id="legend">
-    <Panel class="flex-none">
-      <template #header>
-        <div class="flex items-center gap-2" style="margin-bottom: -10px;">
-          <i class="pi pi-list" style="font-size: 1rem"></i>
-          <span class="font-bold">Legend</span>
-        </div>
-        </template>
-        <div class="flex flex-col items-center justify-center gap-2">
-          <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
-          <div class="text-center opacity-50">Too many items, try filtering by datasets or methods.</div>
-        </div>
-    </Panel>
-  </div>  
+  <LegendComponent v-if="showLegend" :legendType="legendType" :legendObject="legendObject" :fillOption="buildingOutlineFillSelection" :legendState="legendState"/>
 </template>
 
 <style scoped>
@@ -595,13 +576,6 @@ const filteredFloorMeasures = computed(() => {
   max-height: calc(100vh - 40px);
   width: 400px;
   z-index: 1; /* Ensures it stays above the map */
-}
-
-#legend {
-  position: absolute;
-  bottom: 20px;
-  right: 50px;
-  width: 400px;
 }
 
 .subheading {
