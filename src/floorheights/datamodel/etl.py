@@ -166,6 +166,38 @@ def sample_dem_with_buildings(
     return min_heights, max_heights
 
 
+def sample_polys_with_buildings(
+    polygons: gpd.GeoDataFrame,
+    buildings: gpd.GeoDataFrame,
+    field: str,
+) -> gpd.GeoDataFrame:
+    """Sample a field's values from a polygon dataset for each building geometry"""
+    buildings = buildings.reset_index()
+
+    # Perform a spatial join to associate land use polygons with building footprints
+    intersections = gpd.overlay(
+        buildings, polygons, how="intersection", keep_geom_type=False
+    )
+    intersections["intersection_area"] = intersections.to_crs(
+        {"proj": "cea"}
+    ).geometry.area
+
+    # Identify the intersection with the maximum area for each building
+    max_intersections = intersections.loc[
+        intersections.groupby("index")["intersection_area"].idxmax()
+    ]
+
+    # Assign the land use value back to the original buildings GeoDataFrame
+    buildings = buildings.merge(
+        max_intersections[["index", field]], on="index", how="left"
+    )
+    buildings = buildings.drop(columns=["index"])
+
+    buildings = buildings[buildings[field].notna()]
+
+    return buildings
+
+
 def remove_overlapping_geoms(
     session: Session, overlap_threshold: float, bbox: tuple = None
 ) -> Result:
@@ -244,7 +276,11 @@ def split_by_cadastre(
     ]
 
     # Split these buildings by cadastre lots
-    split_buildings = gpd.overlay(buildings_to_split, cadastre, how="intersection")
+    split_buildings = gpd.overlay(
+        buildings_to_split, cadastre, how="intersection", keep_geom_type=False
+    )
+
+    split_buildings.to_file("split_buildings.gpkg")
 
     # Update the original GeoDataFrame
     buildings.loc[buildings_to_split.index, "geometry"] = None
@@ -253,6 +289,8 @@ def split_by_cadastre(
         crs=buildings.crs,
     )
     buildings = buildings.explode()
+    buildings = buildings.reset_index(drop=True)
+
     return buildings
 
 
@@ -687,6 +725,7 @@ def build_denormalised_query() -> Select:
             FloorMeasure.height.label("floor_height_m"),
             FloorMeasure.accuracy_measure.label("accuracy"),
             FloorMeasure.aux_info,
+            Building.land_use_zone,
             Building.outline,
         )
         .select_from(FloorMeasure)
@@ -699,15 +738,38 @@ def build_denormalised_query() -> Select:
     return select_query
 
 
+def build_buildings_query() -> Select:
+    """Build buildings query"""
+    select_query = (
+        select(
+            Building.id,
+            AddressPoint.gnaf_id,
+            AddressPoint.address.label("gnaf_address"),
+            AddressPoint.geocode_type,
+            Building.land_use_zone,
+            Building.outline,
+        )
+        .select_from(Building)
+        .outerjoin(AddressPoint, Building.address_points)
+    )
+
+    return select_query
+
+
 def write_ogr_file(
-    output_file: str, select_query: Select, conn: Connection, normalise_aux_info=False
+    output_file: str,
+    select_query: Select,
+    conn: Connection,
+    normalise_aux_info=False,
+    buildings_only=False,
 ):
     gdf = gpd.read_postgis(select_query, con=conn, geom_col="outline")
 
-    if normalise_aux_info is True:
-        gdf = pd.concat([gdf, pd.json_normalize(gdf.pop("aux_info"))], axis=1)
-    else:
-        # Convert dict rows to JSON strings
-        gdf.aux_info = gdf.aux_info.apply(json.dumps)
+    if buildings_only is False:
+        if normalise_aux_info is True:
+            gdf = pd.concat([gdf, pd.json_normalize(gdf.pop("aux_info"))], axis=1)
+        else:
+            # Convert dict rows to JSON strings
+            gdf.aux_info = gdf.aux_info.apply(json.dumps)
 
     gdf.to_file(output_file)
