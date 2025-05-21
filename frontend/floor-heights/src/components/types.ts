@@ -29,9 +29,15 @@ interface MapLocation {
   coordinates: LngLat;
 }
 
+interface GraduatedFillLegend {
+  min: number | null;
+  max: number | null;
+}
+
 export type {
   AddressPoint,
   Building,
   FloorMeasure,
-  MapLocation
+  MapLocation,
+  GraduatedFillLegend
 };

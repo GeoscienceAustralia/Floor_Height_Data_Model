@@ -1,4 +1,4 @@
-import { Map, LngLat, LngLatBoundsLike, AddLayerObject, NavigationControl, VectorTileSource} from 'maplibre-gl';
+import { Map, LngLat, LngLatBoundsLike, NavigationControl, VectorTileSource} from 'maplibre-gl';
 
 import { Point } from 'geojson';
 
@@ -14,9 +14,18 @@ const TILESERVER_LAYER_DETAILS = [
 
 const COLOR_ADDRESS_POINT: string = '#3887BE';
 const COLOR_BUILDING: string = '#F6511D';
-const COLOR_BUILDING_GRADIENT_START: string = '#FFBEA8';
-const COLOR_BUILDING_GRADIENT_END: string = '#FF4B14';
 const COLOR_ADDRESS_BUILDING_LINK: string = '#3887BE';
+
+// Matplotlib magma gradient - https://matplotlib.org/stable/users/explain/colors/colormaps.html#sequential
+const COLOR_BUILDING_GRADIENT_CLASSES: string[] = ['#FED395', '#F1605D', '#331067'];
+
+// Matplotlib tab20 palette - https://matplotlib.org/stable/users/explain/colors/colormaps.html#qualitative
+const COLOR_BUILDING_CATEGORISED_CLASSES: string[] = [
+  '#1F77B4', '#FF7F0E', '#2CA02C', '#D62728', '#9467BD',
+  '#8C564B', '#E377C2', '#7F7F7F', '#BCBD22', '#17BECF',
+  '#AEC7E8', '#FFBB78', '#98DF8A', '#FF9896', '#C5B0D5',
+  '#C49C94', '#F7B6D2', '#C7C7C7', '#DBDB8D', '#9EDAE5'
+];
 
 export default class FloorHeightsMap {
   map: Map | null;
@@ -34,7 +43,7 @@ export default class FloorHeightsMap {
         style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
         // style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
         center: mapCenter,
-        zoom: 12,
+        zoom: 13,
         maxZoom: 22,
         minZoom: 11
       });
@@ -56,6 +65,36 @@ export default class FloorHeightsMap {
               promoteId: layerDetails.idField
           });
         }
+        
+        // Add building layer
+        this.map?.addLayer({
+          'id': 'building_fh',
+          'type': 'fill',
+          'source': 'building_query',
+          'source-layer': 'building_query',
+          'layout': {},
+          'paint': {
+            'fill-color': COLOR_BUILDING,
+            'fill-outline-color': COLOR_BUILDING,
+            'fill-opacity': 0.4,
+          }
+        });
+
+        // Add address layer
+        this.map?.addLayer({
+          'id': 'address_point',
+          'type': 'circle',
+          'source': 'address_point',
+          'source-layer': 'address_point',
+          'paint': {
+            'circle-color': COLOR_ADDRESS_POINT,
+            'circle-radius': [
+              'interpolate', ['linear'], ['zoom'],
+              14, 1,  // when zoomed out, radius is 1
+              18, 5  // when zoomed in, radius is 5
+            ],
+          }
+        });
 
         return resolve(this.map);
       });
@@ -109,28 +148,10 @@ export default class FloorHeightsMap {
     });
   }
 
-  generateColor = (str: string) => {
-    const elements = str.split(',');
-  
-    const elementHashes = elements.map((element) => {
-      let hash = 0;
-      for (let i = 0; i < element.length; i++) {
-        hash = element.charCodeAt(i) + ((hash << 5) - hash);
-        hash = hash & hash;
-      }
-      return Math.abs(hash);
-    });
-  
-    const combinedHash = elementHashes.reduce((acc, h) => acc ^ h, 0);
-    const hue = combinedHash % 360;
-  
-    return `hsl(${hue}, 70%, 50%)`;
-  }
-
   generateCategorisedColorMap = (attributes: string[]) => {
-    // Generate a unique colour for each attribute
-    const attributeColors = attributes.reduce((acc, attribute) => {
-      acc[attribute] = this.generateColor(attribute); // Assign a colour based on the attribute name
+    // Generate a unique colour for each attribute using the predefined colour array
+    const attributeColors = attributes.reduce((acc, attribute, index) => {
+      acc[attribute] = COLOR_BUILDING_CATEGORISED_CLASSES[index % COLOR_BUILDING_CATEGORISED_CLASSES.length];
       return acc;
     }, {} as Record<string, string>);
   
@@ -170,11 +191,10 @@ export default class FloorHeightsMap {
 
   generateGraduatedColorMap = (min: number, max: number) => {
     const colorMap = [
-      min,
-      COLOR_BUILDING_GRADIENT_START,
-      max,
-      COLOR_BUILDING_GRADIENT_END
-    ]
+      min, COLOR_BUILDING_GRADIENT_CLASSES[0],
+      Math.abs(min+max)/2, COLOR_BUILDING_GRADIENT_CLASSES[1],
+      max, COLOR_BUILDING_GRADIENT_CLASSES[2]
+    ];
     return colorMap;
   }
 
@@ -212,52 +232,19 @@ export default class FloorHeightsMap {
   }
 
   setBuildingOutlineVisibility(visible: boolean) {
-    if (visible) {
-      let buildingLayerDef:AddLayerObject = {
-        'id': 'building_fh',
-        'type': 'fill',
-        'source': 'building_query',
-        'source-layer': 'building_query',
-        'layout': {},
-        'paint': {
-          'fill-color': COLOR_BUILDING,
-          'fill-outline-color': COLOR_BUILDING,
-          'fill-opacity': 0.4,
-        }
-      };
-      if (this.map?.getLayer('address_point')) {
-        this.map?.addLayer(buildingLayerDef, 'address_point');
-      } else {
-        this.map?.addLayer(buildingLayerDef);
-      }
+    if (!visible) {
+      this.map?.setLayoutProperty("building_fh", "visibility", "none");
     } else {
-      if (this.map?.getLayer('building_fh')) {
-        this.map?.removeLayer('building_fh');
-      }
+      this.map?.setLayoutProperty("building_fh", "visibility", "visible");
     }
   }
-  
+
   setAddressPointVisibility(visible: boolean) {
-    if (visible) {
-      this.map?.addLayer({
-        'id': 'address_point',
-        'type': 'circle',
-        'source': 'address_point',
-        'source-layer': 'address_point',
-        'paint': {
-          'circle-color': COLOR_ADDRESS_POINT,
-          'circle-radius': [
-            'interpolate', ['linear'], ['zoom'],
-            14, 1,  // when zoomed out, radius is 1
-            18, 5  // when zoomed in, radius is 5
-          ],
-        }
-      });
-    } else {
-      if (this.map?.getLayer('address_point')) {
-        this.map?.removeLayer('address_point');
-      }
+    if (!visible) {
+      this.map?.setLayoutProperty("address_point", "visibility", "none");
       this.hideBuildingLinksForAddress();
+    } else {
+      this.map?.setLayoutProperty("address_point", "visibility", "visible");
     }
   }
 
@@ -291,28 +278,15 @@ export default class FloorHeightsMap {
     }, 'address_point');
   }
 
-  setMethodFilter(methods: string[]) {
-    if (methods.length == 0) {
+  setBuildingFilter(datasets: string[], methods: string[]) {
+    if (datasets.length == 0 && methods.length == 0) {
       this.map?.setFilter('building_fh', null);
       return;
     }
     const filterExpression = [
         "any",
+        ...datasets.map(name => ["!", ["==", ["index-of", name, ["get", "dataset_names"]], -1]]),
         ...methods.map(name => ["!", ["==", ["index-of", name, ["get", "method_names"]], -1]])
-    ];
-
-    // @ts-ignore
-    this.map?.setFilter('building_fh', filterExpression);
-  }
-
-  setDatasetFilter(datasets: string[]) {
-    if (datasets.length == 0) {
-      this.map?.setFilter('building_fh', null);
-      return;
-    }
-    const filterExpression = [
-        "any",
-        ...datasets.map(name => ["!", ["==", ["index-of", name, ["get", "dataset_names"]], -1]])
     ];
 
     // @ts-ignore
