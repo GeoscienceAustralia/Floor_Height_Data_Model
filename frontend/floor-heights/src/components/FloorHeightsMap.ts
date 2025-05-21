@@ -1,4 +1,4 @@
-import { Map, LngLat, LngLatBoundsLike, AddLayerObject, NavigationControl, VectorTileSource} from 'maplibre-gl';
+import { Map, LngLat, LngLatBoundsLike, NavigationControl, VectorTileSource} from 'maplibre-gl';
 
 import { Point } from 'geojson';
 
@@ -65,6 +65,36 @@ export default class FloorHeightsMap {
               promoteId: layerDetails.idField
           });
         }
+        
+        // Add building layer
+        this.map?.addLayer({
+          'id': 'building_fh',
+          'type': 'fill',
+          'source': 'building_query',
+          'source-layer': 'building_query',
+          'layout': {},
+          'paint': {
+            'fill-color': COLOR_BUILDING,
+            'fill-outline-color': COLOR_BUILDING,
+            'fill-opacity': 0.4,
+          }
+        });
+
+        // Add address layer
+        this.map?.addLayer({
+          'id': 'address_point',
+          'type': 'circle',
+          'source': 'address_point',
+          'source-layer': 'address_point',
+          'paint': {
+            'circle-color': COLOR_ADDRESS_POINT,
+            'circle-radius': [
+              'interpolate', ['linear'], ['zoom'],
+              14, 1,  // when zoomed out, radius is 1
+              18, 5  // when zoomed in, radius is 5
+            ],
+          }
+        });
 
         return resolve(this.map);
       });
@@ -202,52 +232,19 @@ export default class FloorHeightsMap {
   }
 
   setBuildingOutlineVisibility(visible: boolean) {
-    if (visible) {
-      let buildingLayerDef:AddLayerObject = {
-        'id': 'building_fh',
-        'type': 'fill',
-        'source': 'building_query',
-        'source-layer': 'building_query',
-        'layout': {},
-        'paint': {
-          'fill-color': COLOR_BUILDING,
-          'fill-outline-color': COLOR_BUILDING,
-          'fill-opacity': 0.4,
-        }
-      };
-      if (this.map?.getLayer('address_point')) {
-        this.map?.addLayer(buildingLayerDef, 'address_point');
-      } else {
-        this.map?.addLayer(buildingLayerDef);
-      }
+    if (!visible) {
+      this.map?.setLayoutProperty("building_fh", "visibility", "none");
     } else {
-      if (this.map?.getLayer('building_fh')) {
-        this.map?.removeLayer('building_fh');
-      }
+      this.map?.setLayoutProperty("building_fh", "visibility", "visible");
     }
   }
-  
+
   setAddressPointVisibility(visible: boolean) {
-    if (visible) {
-      this.map?.addLayer({
-        'id': 'address_point',
-        'type': 'circle',
-        'source': 'address_point',
-        'source-layer': 'address_point',
-        'paint': {
-          'circle-color': COLOR_ADDRESS_POINT,
-          'circle-radius': [
-            'interpolate', ['linear'], ['zoom'],
-            14, 1,  // when zoomed out, radius is 1
-            18, 5  // when zoomed in, radius is 5
-          ],
-        }
-      });
-    } else {
-      if (this.map?.getLayer('address_point')) {
-        this.map?.removeLayer('address_point');
-      }
+    if (!visible) {
+      this.map?.setLayoutProperty("address_point", "visibility", "none");
       this.hideBuildingLinksForAddress();
+    } else {
+      this.map?.setLayoutProperty("address_point", "visibility", "visible");
     }
   }
 
