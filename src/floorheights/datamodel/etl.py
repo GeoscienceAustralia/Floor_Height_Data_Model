@@ -47,7 +47,11 @@ def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
     If the input OGR file's geodetic datum is GDA1994, transform it to GDA2020.
     Subsequently transform to WGS1984 for ingestion into PostgreSQL.
     """
-    gdf = gpd.read_file(input_file, **kwargs)
+    if input_file.endswith(".parquet") or input_file.endswith(".geoparquet"):
+        gdf = gpd.read_parquet(input_file, **kwargs)
+    else:
+        gdf = gpd.read_file(input_file, **kwargs)
+
     if gdf.crs.geodetic_crs.equals(CRS.from_epsg(4283).geodetic_crs):
         gdf = gdf.to_crs(7844)
     gdf = gdf.to_crs(4326)

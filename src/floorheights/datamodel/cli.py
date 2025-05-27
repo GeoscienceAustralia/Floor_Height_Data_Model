@@ -60,7 +60,7 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--input-address", required=True, type=str, help="Input address points (Geodatabase) file path.")  # fmt: skip
+@click.option("-i", "--input-address", required=True, type=str, help="Input address points file path.")  # fmt: skip
 @click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 def ingest_address_points(input_address, chunksize):
     """Ingest address points"""
@@ -102,11 +102,11 @@ def ingest_address_points(input_address, chunksize):
 
 
 @click.command()
-@click.option("-i", "--input-buildings", required=True, type=click.File(), help="Input building footprint (GeoParquet) file path.")  # fmt: skip
-@click.option("-d", "--input-dem", required=True, type=click.File(), help="Input DEM file path.")  # fmt: skip
+@click.option("-i", "--input-buildings", required=True, type=str, help="Input building footprint file path.")  # fmt: skip
+@click.option("-d", "--input-dem", required=True, type=click.File(), help="Input DEM file path, used to sample building footprint ground height.")  # fmt: skip
 @click.option("-s", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 @click.option("--split-by-cadastre", type=str, help="Split buildings by cadastre, specify input cadastre vector file path for splitting.")  # fmt: skip
-@click.option("--join-land-zoning", type=click.File(), help="Join land zoning type to buildings, specify input land zoning vector file path.")  # fmt: skip
+@click.option("--join-land-zoning", type=str, help="Join land zoning type to buildings, specify input land zoning vector file path.")  # fmt: skip
 @click.option("--land-zoning-field", type=str, help="The land zoning dataset's field name to join to buildings.")  # fmt: skip
 @click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
 @click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
@@ -145,11 +145,11 @@ def ingest_buildings(
 
     click.echo("Loading building GeoParquet...")
     try:
-        buildings = gpd.read_parquet(
-            input_buildings.name, columns=["geometry"], bbox=mask_bbox
+        buildings = etl.read_ogr_file(
+            input_buildings, columns=["geometry"], bbox=tuple(mask_bbox)
         )
     except Exception as error:
-        raise click.exceptions.FileError(input_buildings.name, error)
+        raise click.exceptions.FileError(input_buildings, error)
 
     buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
     buildings = buildings.to_crs(
@@ -196,7 +196,7 @@ def ingest_buildings(
         click.echo(f"Joining land zoning attribute...")
         try:
             land_use = etl.read_ogr_file(
-                join_land_zoning.name, mask=mask_df
+                join_land_zoning, mask=mask_df
             )
             land_use = land_use.to_crs(dem.crs)
 
