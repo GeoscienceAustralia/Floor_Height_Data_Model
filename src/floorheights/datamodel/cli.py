@@ -62,7 +62,7 @@ def create_dummy_building():
 @click.command()
 @click.option("-i", "--input-address", required=True, type=str, help="Input address points file path.")  # fmt: skip
 @click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
-def ingest_address_points(input_address, chunksize):
+def ingest_address_points(input_address: str, chunksize: int):
     """Ingest address points"""
     click.secho("Ingesting address points", bold=True)
     try:
@@ -112,14 +112,14 @@ def ingest_address_points(input_address, chunksize):
 @click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
 @click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
 def ingest_buildings(
-    input_buildings,
-    input_dem,
-    chunksize,
-    split_by_cadastre,
-    join_land_zoning,
-    land_zoning_field,
-    remove_small,
-    remove_overlapping,
+    input_buildings: str,
+    input_dem: click.File,
+    chunksize: int,
+    split_by_cadastre: str,
+    join_land_zoning: str,
+    land_zoning_field: str,
+    remove_small: float,
+    remove_overlapping: float,
 ):
     """Ingest building footprints"""
     if join_land_zoning and not land_zoning_field:
@@ -258,7 +258,9 @@ def ingest_buildings(
 @click.option("-c", "--input-cadastre", type=str, help="Input cadastre vector file path to support address joining.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join addresses to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
-def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
+def join_address_buildings(
+    input_cadastre: str, flatten_cadastre: bool, join_largest: bool
+):
     """Join address points to building outlines"""
     if join_largest and not input_cadastre:
         raise click.UsageError(
@@ -340,7 +342,11 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_measures(
-    input_nexis, clip_to_cadastre, flatten_cadastre, join_largest, input_cadastre
+    input_nexis: str,
+    clip_to_cadastre: str,
+    flatten_cadastre: bool,
+    join_largest: bool,
+    input_cadastre: bool,
 ):
     """Ingest NEXIS floor height measures"""
     if clip_to_cadastre and not input_cadastre:
@@ -515,15 +521,15 @@ def ingest_nexis_measures(
 @click.option("--dataset-desc", type=str, help="The floor measure dataset description.")  # fmt: skip
 @click.option("--dataset-src", type=str, help="The floor measure dataset source.")  # fmt: skip
 def ingest_validation_measures(
-    input_data,
-    input_cadastre,
-    flatten_cadastre,
-    join_largest,
-    ffh_field,
-    step_size,
-    dataset_name,
-    dataset_desc,
-    dataset_src,
+    input_data: str,
+    input_cadastre: str,
+    flatten_cadastre: bool,
+    join_largest: bool,
+    ffh_field: str,
+    step_size: float,
+    dataset_name: str,
+    dataset_desc: str,
+    dataset_src: str,
 ):
     """Ingest validation floor height method"""
     if join_largest and not input_cadastre:
@@ -729,7 +735,12 @@ def ingest_validation_measures(
 @click.option("--dataset-desc", default="Main methodology output - LIDAR", show_default=True, type=str, help="The floor measure dataset description.")  # fmt: skip
 @click.option("--dataset-src", default="FrontierSI", show_default=True, type=str, help="The floor measure dataset source.")  # fmt: skip
 def ingest_main_method_measures(
-    input_json, ffh_field, method_name, dataset_name, dataset_desc, dataset_src
+    input_json: click.File,
+    ffh_field: str,
+    method_name: str,
+    dataset_name: str,
+    dataset_desc: str,
+    dataset_src: str,
 ):
     """Ingest main methodology floor height JSON"""
     click.secho("Ingesting Main Methodology measures", bold=True)
@@ -810,7 +821,9 @@ def ingest_main_method_measures(
 @click.option("--pano-path", type=click.Path(), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(), help="Path to folder containing LIDAR images.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="Main Methodology", help="The floor measure dataset name to attach images to.")  # fmt: skip
-def ingest_main_method_images(pano_path, lidar_path, dataset_name):
+def ingest_main_method_images(
+    pano_path: click.Path, lidar_path: click.Path, dataset_name: str
+):
     """Ingest main methodology images"""
     if not pano_path and not lidar_path:
         raise click.UsageError(
