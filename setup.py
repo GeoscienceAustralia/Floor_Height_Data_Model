@@ -10,12 +10,16 @@ setup(
     package_dir={'': 'src'},
     namespace_packages=['floorheights'],
     install_requires=[
-        'click',
-        'SQLAlchemy',
-        'psycopg2-binary',
         'alembic',
+        'click',
         'GeoAlchemy2',
+        'geopandas',
+        'numpy',
+        'psycopg2-binary',
+        'pyarrow',
         'python-dotenv',
+        'rasterio',
+        'SQLAlchemy',
     ],
     entry_points={
         'console_scripts': [
