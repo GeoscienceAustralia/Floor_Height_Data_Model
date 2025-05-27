@@ -341,8 +341,8 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 @click.option("--clip-to-cadastre", is_flag=True, help="Clip measure points by the cadastre dataset extents. This will speed up processing, but won't join measures outside the extent of the cadastre.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
-def ingest_nexis_method(input_nexis, clip_to_cadastre, flatten_cadastre, join_largest, input_cadastre):
-    """Ingest NEXIS floor height method"""
+def ingest_nexis_measures(input_nexis, clip_to_cadastre, flatten_cadastre, join_largest, input_cadastre):
+    """Ingest NEXIS floor height measures"""
     if clip_to_cadastre and not input_cadastre:
         raise click.UsageError(
             "--clip-to-cadastre must be used with --input-cadastre"
@@ -516,7 +516,7 @@ def ingest_nexis_method(input_nexis, clip_to_cadastre, flatten_cadastre, join_la
 @click.option("--dataset-name", type=str, help="Dataset name.")
 @click.option("--dataset-desc", type=str, help="Dataset description.")
 @click.option("--dataset-src", type=str, help="Dataset source.")
-def ingest_validation_method(
+def ingest_validation_measures(
     input_data,
     input_cadastre,
     flatten_cadastre,
@@ -730,7 +730,7 @@ def ingest_validation_method(
 @click.option("--dataset-name", type=str, help="Dataset name.")
 @click.option("--dataset-desc", type=str, help="Dataset description.")
 @click.option("--dataset-src", type=str, help="Dataset source.")
-def ingest_main_method(
+def ingest_main_method_measures(
     input_json, ffh_field, method_name, dataset_name, dataset_desc, dataset_src
 ):
     """Ingest main methodology floor height JSON"""
@@ -935,9 +935,9 @@ cli.add_command(create_dummy_building)
 cli.add_command(ingest_address_points)
 cli.add_command(ingest_buildings)
 cli.add_command(join_address_buildings)
-cli.add_command(ingest_nexis_method)
-cli.add_command(ingest_validation_method)
-cli.add_command(ingest_main_method)
+cli.add_command(ingest_nexis_measures)
+cli.add_command(ingest_validation_measures)
+cli.add_command(ingest_main_method_measures)
 cli.add_command(ingest_main_method_images)
 cli.add_command(export_ogr_file)
 
