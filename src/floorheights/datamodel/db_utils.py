@@ -29,13 +29,18 @@ def create_database_url() -> URL:
 
     host = os.getenv('POSTGRES_HOST')
     if host is None:
-        raise RuntimeError("Missing database name (env var POSTGRES_HOST)")
+        raise RuntimeError("Missing database host (env var POSTGRES_HOST)")
+
+    port = os.getenv('POSTGRES_PORT')
+    if port is None:
+        port=5432
 
     url_object = URL.create(
         "postgresql+psycopg2",
         username=username,
         password=password,
         host=host,
+        port=port,
         database=database,
     )
     return url_object
