@@ -513,9 +513,9 @@ def ingest_nexis_measures(input_nexis, clip_to_cadastre, flatten_cadastre, join_
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
 @click.option("--step-size", type=float, default=0.28, show_default=True, help="Step size value in metres.")  # fmt: skip
-@click.option("--dataset-name", type=str, help="Dataset name.")
-@click.option("--dataset-desc", type=str, help="Dataset description.")
-@click.option("--dataset-src", type=str, help="Dataset source.")
+@click.option("--dataset-name", type=str, default="Validation", show_default=True, help="The floor measure dataset name.")  # fmt: skip
+@click.option("--dataset-desc", type=str, help="The floor measure dataset description.")  # fmt: skip
+@click.option("--dataset-src", type=str, help="The floor measure dataset source.")  # fmt: skip
 def ingest_validation_measures(
     input_data,
     input_cadastre,
@@ -725,11 +725,11 @@ def ingest_validation_measures(
 
 @click.command()
 @click.option("-i", "--input-json", required=True, type=click.File(), help="Input main methodology floor height JSON file path.")  # fmt: skip
-@click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
-@click.option("--method-name", type=str, help="Method name.")
-@click.option("--dataset-name", type=str, help="Dataset name.")
-@click.option("--dataset-desc", type=str, help="Dataset description.")
-@click.option("--dataset-src", type=str, help="Dataset source.")
+@click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field in the input JSON.")  # fmt: skip
+@click.option("--method-name", default="Main Methodology", type=str, help="The floor measure method name.")  # fmt: skip
+@click.option("--dataset-name", type=str, help="The floor measure dataset name.")  # fmt: skip
+@click.option("--dataset-desc", default="Main methodology output - LIDAR", show_default=True, type=str, help="The floor measure dataset description.")  # fmt: skip
+@click.option("--dataset-src", default="FrontierSI", show_default=True, type=str, help="The floor measure dataset source.")  # fmt: skip
 def ingest_main_method_measures(
     input_json, ffh_field, method_name, dataset_name, dataset_desc, dataset_src
 ):
@@ -811,7 +811,7 @@ def ingest_main_method_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(), help="Path to folder containing LIDAR images.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Main Methodology", help="The floor measure dataset name to attach images to.")
+@click.option("--dataset-name", type=str, default="Main Methodology", help="The floor measure dataset name to attach images to.")  # fmt: skip
 def ingest_main_method_images(
     pano_path,
     lidar_path,
@@ -929,9 +929,9 @@ cli.add_command(export_ogr_file)
 
 
 if __name__ == "__main__":
-    cli()
+    cli(max_content_width=250)
 
 
 # as referenced in setup.py (is the CLI console_script function)
 def main():
-    cli()
+    cli(max_content_width=250)
