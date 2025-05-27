@@ -64,8 +64,9 @@ def create_dummy_building():
 @click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 def ingest_address_points(input_address, chunksize):
     """Ingest address points"""
-    click.echo("Loading Geodatabase...")
+    click.secho("Ingesting address points", bold=True)
     try:
+        click.echo("Loading address points...")
         address = etl.read_ogr_file(
             input_address,
             columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS", "GEOCODE_TYPE"],
@@ -126,8 +127,9 @@ def ingest_buildings(
             "--join-land-zoning must be used with --land-zoning-field"
         )
 
-    click.echo("Loading DEM...")
+    click.secho("Ingesting building footprints", bold=True)
     try:
+        click.echo("Loading DEM...")
         dem = rasterio.open(input_dem.name)
         dem_crs = dem.crs
     except Exception as error:
@@ -143,7 +145,7 @@ def ingest_buildings(
     mask_df = mask_df.to_crs(4326)
     mask_bbox = mask_df.total_bounds
 
-    click.echo("Loading building GeoParquet...")
+    click.echo("Loading building footprints...")
     try:
         buildings = etl.read_ogr_file(
             input_buildings, columns=["geometry"], bbox=tuple(mask_bbox)
@@ -193,7 +195,7 @@ def ingest_buildings(
         click.echo(f"Removed {remove_count} buildings...")
 
     if join_land_zoning:
-        click.echo(f"Joining land zoning attribute...")
+        click.echo("Joining land zoning attribute...")
         try:
             land_use = etl.read_ogr_file(
                 join_land_zoning, mask=mask_df
@@ -267,6 +269,7 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
     if flatten_cadastre and not input_cadastre:
         raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
 
+    click.secho("Joining addresses to buildings", bold=True)
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
@@ -351,8 +354,9 @@ def ingest_nexis_method(input_nexis, clip_to_cadastre, flatten_cadastre, join_la
     if flatten_cadastre and not input_cadastre:
         raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
 
-    click.echo("Loading NEXIS points...")
+    click.secho("Ingesting NEXIS measures", bold=True)
     try:
+        click.echo("Loading NEXIS points...")
         nexis_gdf = etl.read_nexis_csv(input_nexis, 4283)
     except Exception as error:
         raise click.exceptions.FileError(input_nexis, error)
@@ -531,8 +535,9 @@ def ingest_validation_method(
     if flatten_cadastre and not input_cadastre:
         raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
 
-    click.echo("Loading validation points...")
+    click.secho("Ingesting Validation measures", bold=True)
     try:
+        click.echo("Loading validation points...")
         method_gdf = etl.read_ogr_file(input_data)
     except Exception as error:
         raise click.exceptions.FileError(Path(input_data).name, error)
@@ -729,9 +734,9 @@ def ingest_main_method(
     input_json, ffh_field, method_name, dataset_name, dataset_desc, dataset_src
 ):
     """Ingest main methodology floor height JSON"""
-
-    click.echo("Loading Floor Height JSON...")
+    click.secho("Ingesting Main Methodology measures", bold=True)
     try:
+        click.echo("Loading Floor Height JSON...")
         json_data = json.load(input_json)
         method_df = pd.DataFrame(json_data["buildings"])
     except Exception as error:
@@ -820,6 +825,8 @@ def ingest_main_method_images(
         with open(image_path, "rb") as f:
             return f.read()
 
+    click.secho("Ingesting Main Methodology images", bold=True)
+
     from floorheights.datamodel.models import FloorMeasure, Dataset
 
     session = SessionLocal()
@@ -903,6 +910,7 @@ def ingest_main_method_images(
 @click.option("--buildings-only", is_flag=True, help="Export buildings only, for input to object detection processing.")  # fmt: skip
 def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: bool):
     """Export an OGR file of the data model"""
+    click.secho("Exporting OGR file", bold=True)
     if buildings_only:
         select_query = etl.build_buildings_query()
     else:
@@ -919,7 +927,7 @@ def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: 
             )
         except Exception as error:
             raise click.exceptions.FileError(Path(output_file).name, error)
-    click.echo(f"Export complete")
+    click.echo("Export complete")
 
 
 cli.add_command(create_dummy_address_point)
