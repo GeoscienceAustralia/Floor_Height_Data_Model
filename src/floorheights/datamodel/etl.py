@@ -715,6 +715,26 @@ def insert_floor_measure_dataset_association(
     )
 
 
+def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame:
+    """Get FloorMeasure IDs and image names from the aux_info field"""
+    select_query = (
+        select(
+            FloorMeasure.id,
+            FloorMeasure.aux_info,
+        )
+        .select_from(FloorMeasure)
+        .join(Dataset, FloorMeasure.datasets)
+        .filter(Dataset.name == dataset_name)
+    )
+    measure_df = pd.read_sql(select_query, conn)
+    measure_df = pd.concat(
+        [measure_df, pd.json_normalize(measure_df.pop("aux_info"))], axis=1
+    )
+    measure_df = measure_df.drop_duplicates(subset=["frame_filename"])
+
+    return measure_df
+
+
 def build_denormalised_query() -> Select:
     """Build denormalised query"""
     select_query = (

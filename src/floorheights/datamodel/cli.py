@@ -811,9 +811,11 @@ def ingest_main_method_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(), help="Path to folder containing LIDAR images.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="Main Methodology", help="The floor measure dataset name to attach images to.")
 def ingest_main_method_images(
     pano_path,
     lidar_path,
+    dataset_name
 ):
     """Ingest main methodology images"""
     if not pano_path and not lidar_path:
@@ -827,28 +829,12 @@ def ingest_main_method_images(
 
     click.secho("Ingesting Main Methodology images", bold=True)
 
-    from floorheights.datamodel.models import FloorMeasure, Dataset
-
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         click.echo("Selecting records from floor_measure table...")
 
-        # Get (main methodology) floor_measure IDs, and filenames for images
-        select_query = (
-            select(
-                FloorMeasure.id,
-                FloorMeasure.aux_info,
-            )
-            .select_from(FloorMeasure)
-            .join(Dataset, FloorMeasure.datasets)
-            .filter(Dataset.name == "Main Methodology")
-        )
-        measure_df = pd.read_sql(select_query, conn)
-        measure_df = pd.concat(
-            [measure_df, pd.json_normalize(measure_df.pop("aux_info"))], axis=1
-        )
-        measure_df = measure_df.drop_duplicates(subset=["frame_filename"])
+        measure_df = etl.get_measure_image_names(conn, dataset_name)
 
         # Ingest panorama images
         if pano_path:
