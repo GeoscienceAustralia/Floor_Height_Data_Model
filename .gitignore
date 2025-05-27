@@ -174,3 +174,7 @@ data/
 
 # Vite
 .vite/
+
+# VSCode
+*.code-workspace
+.vscode/
