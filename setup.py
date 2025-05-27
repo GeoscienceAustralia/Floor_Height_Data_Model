@@ -23,7 +23,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'floorheights-dm = floorheights.datamodel.cli:main',
+            'fh-cli = floorheights.datamodel.cli:main',
         ],
     },
     include_package_data=True,
