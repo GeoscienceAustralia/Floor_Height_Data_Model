@@ -180,7 +180,7 @@ def ingest_buildings(
                 address_points = address_points.to_crs(dem.crs)
                 if not address_points.within(mask_df.geometry.iloc[0]).any:
                     raise Exception
-            except Exception as error:
+            except Exception:
                 raise click.exceptions.BadParameter(
                     "--split-by-cadastre can only be used after ingesting address_points."
                 )
@@ -197,9 +197,7 @@ def ingest_buildings(
     if join_land_zoning:
         click.echo("Joining land zoning attribute...")
         try:
-            land_use = etl.read_ogr_file(
-                join_land_zoning, mask=mask_df
-            )
+            land_use = etl.read_ogr_file(join_land_zoning, mask=mask_df)
             land_use = land_use.to_crs(dem.crs)
 
             if land_zoning_field not in land_use.columns:
@@ -341,12 +339,12 @@ def join_address_buildings(input_cadastre, flatten_cadastre, join_largest):
 @click.option("--clip-to-cadastre", is_flag=True, help="Clip measure points by the cadastre dataset extents. This will speed up processing, but won't join measures outside the extent of the cadastre.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
-def ingest_nexis_measures(input_nexis, clip_to_cadastre, flatten_cadastre, join_largest, input_cadastre):
+def ingest_nexis_measures(
+    input_nexis, clip_to_cadastre, flatten_cadastre, join_largest, input_cadastre
+):
     """Ingest NEXIS floor height measures"""
     if clip_to_cadastre and not input_cadastre:
-        raise click.UsageError(
-            "--clip-to-cadastre must be used with --input-cadastre"
-        )
+        raise click.UsageError("--clip-to-cadastre must be used with --input-cadastre")
     if join_largest and not input_cadastre:
         raise click.UsageError(
             "--join-largest-building must be used with --input-cadastre"
@@ -812,11 +810,7 @@ def ingest_main_method_measures(
 @click.option("--pano-path", type=click.Path(), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(), help="Path to folder containing LIDAR images.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="Main Methodology", help="The floor measure dataset name to attach images to.")  # fmt: skip
-def ingest_main_method_images(
-    pano_path,
-    lidar_path,
-    dataset_name
-):
+def ingest_main_method_images(pano_path, lidar_path, dataset_name):
     """Ingest main methodology images"""
     if not pano_path and not lidar_path:
         raise click.UsageError(

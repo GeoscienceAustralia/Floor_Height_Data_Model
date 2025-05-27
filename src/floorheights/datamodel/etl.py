@@ -231,7 +231,8 @@ def remove_overlapping_geoms(
     select_query = (
         select(
             lateral_subquery.c.id,
-        ).select_from(smaller)
+        )
+        .select_from(smaller)
         # Join on True to make it a cross lateral join
         .join(lateral_subquery, literal(True))
         # Calculate the ratio of the intersection
@@ -250,7 +251,9 @@ def remove_overlapping_geoms(
     # If a bounding box is provided, filter buildings within the bbox
     if bbox is not None:
         bbox_geom = func.ST_MakeEnvelope(*bbox, 4326)
-        select_query = select_query.where(func.ST_Intersects(smaller.outline, bbox_geom))
+        select_query = select_query.where(
+            func.ST_Intersects(smaller.outline, bbox_geom)
+        )
 
     select_query = select_query.distinct(lateral_subquery.c.id)
 
@@ -610,7 +613,7 @@ def build_floor_measure_query(
         build_aux_info_expression(
             floor_measure_table, [ffh_field, "id", "geometry"]
         ).label("aux_info"),
-        building_id_field
+        building_id_field,
     ]
 
     if join_by == "gnaf_id":
