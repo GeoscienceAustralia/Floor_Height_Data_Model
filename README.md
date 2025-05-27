@@ -31,8 +31,8 @@ Apply all database migrations, this will create the data model tables in the dat
 
 Some dummy data can then be added using the following commands (for test purposes).
 
-    docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-address-point
-    docker compose run --rm app python -m floorheights.datamodel.cli create-dummy-building
+    docker compose run --rm app fh-cli create-dummy-address-point
+    docker compose run --rm app fh-cli create-dummy-building
 
 ## Dev and Prod docker compose profiles
 

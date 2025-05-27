@@ -25,7 +25,7 @@ services:
         condition: service_healthy
     environment:
       - POSTGRES_HOST=postgres
-    command: ["python", "-m", "floorheights.datamodel.cli"]
+    command: ["fh-cli"]
 
   martin:
     image: ghcr.io/maplibre/martin
