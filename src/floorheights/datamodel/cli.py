@@ -3,6 +3,7 @@ import geopandas as gpd
 import json
 import numpy as np
 import pandas as pd
+import psycopg2
 import rasterio
 import uuid
 from pathlib import Path
@@ -794,21 +795,28 @@ def ingest_main_method_measures(
 
         method_df["method_id"] = method_id
 
-        method_df.to_sql(
-            "floor_measure",
-            conn,
-            schema="public",
-            if_exists="append",
-            index=True,
-            dtype={
-                "id": UUID,
-                "building_id": UUID,
-                "method_id": UUID,
-                "height": Numeric,
-                "aux_info": JSON,
-            },
-            method=etl.psql_insert_copy,
-        )
+        try:
+            method_df.to_sql(
+                "floor_measure",
+                conn,
+                schema="public",
+                if_exists="append",
+                index=True,
+                dtype={
+                    "id": UUID,
+                    "building_id": UUID,
+                    "method_id": UUID,
+                    "height": Numeric,
+                    "aux_info": JSON,
+                },
+                method=etl.psql_insert_copy,
+            )
+        except psycopg2.errors.ForeignKeyViolation:
+            raise click.UsageError(
+                "The ingest-main-method-measures command can only be used after "
+                "ingesting buildings, also ensure that the building IDs match those "
+                "in the input JSON."
+            )
 
         etl.insert_floor_measure_dataset_association(
             session, method_dataset_id, method_df.index.tolist()
@@ -842,6 +850,14 @@ def ingest_main_method_images(
         click.echo("Selecting records from floor_measure table...")
 
         measure_df = etl.get_measure_image_names(conn, dataset_name)
+
+        if measure_df.empty:
+            raise click.UsageError(
+                "The ingest-main-method-images command can only be used after "
+                "ingesting the main methdology floor measures."
+            )
+
+        # TODO Implement lidar image ingestion
 
         # Ingest panorama images
         if pano_path:
