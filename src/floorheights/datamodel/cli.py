@@ -1,14 +1,15 @@
+import json
+import uuid
+from pathlib import Path
+
 import click
 import geopandas as gpd
-import json
 import numpy as np
 import pandas as pd
 import psycopg2
 import rasterio
-import uuid
-from pathlib import Path
 from shapely.geometry import box
-from sqlalchemy import Table, String, Numeric, UUID, JSON, LargeBinary, select
+from sqlalchemy import JSON, UUID, LargeBinary, Numeric, String, Table, select
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -512,7 +513,7 @@ def ingest_nexis_measures(
 
 
 @click.command()
-@click.option("-i", "--input-data", required=True, type=str, help="Input validation OGR dataset file path.")  # fmt: skip
+@click.option("-i", "--input-data", required=True, type=str, help="Input validation points dataset file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
