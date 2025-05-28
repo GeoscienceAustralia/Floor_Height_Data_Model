@@ -180,10 +180,11 @@ def ingest_buildings(
                 )
                 # Check if the addresses are empty for the area of interest
                 address_points = address_points.to_crs(dem.crs)
-                if not address_points.within(mask_df.geometry.iloc[0]).any:
+                if not ~address_points.within(mask_df.geometry.iloc[0]).all():
                     raise Exception
+
             except Exception:
-                raise click.exceptions.BadParameter(
+                raise click.UsageError(
                     "--split-by-cadastre can only be used after ingesting address_points."
                 )
 
