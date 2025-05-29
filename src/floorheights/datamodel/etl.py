@@ -419,8 +419,8 @@ def join_by_knn(
         # Nearest neighbour join for all addresses, if we don't have a cadastre
         select_query = select_query.join(lateral_subquery, literal(True)).where(
             func.ST_Distance(
-                func.cast(point_geom, Geography),
-                func.cast(lateral_subquery.c.outline, Geography),
+                point_geom,
+                lateral_subquery.c.outline,
             )
             < knn_max_distance,
         )
@@ -437,8 +437,8 @@ def join_by_knn(
                 cadastre_geom == None,
                 # Join addresses to nearest building if it is within a distance threshold
                 func.ST_Distance(
-                    func.cast(point_geom, Geography),
-                    func.cast(lateral_subquery.c.outline, Geography),
+                    point_geom,
+                    lateral_subquery.c.outline,
                 )
                 < knn_max_distance,
             )
