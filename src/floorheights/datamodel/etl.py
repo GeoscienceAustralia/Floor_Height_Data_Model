@@ -44,17 +44,17 @@ from floorheights.datamodel.models import (
 def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
     """Read OGR file into GeoDataFrame
 
-    If the input OGR file's geodetic datum is GDA1994, transform it to GDA2020.
-    Subsequently transform to WGS1984 for ingestion into PostgreSQL.
+    If the input OGR file's geodetic datum is GDA1994, transform it to GDA2020 for
+    ingestion into PostgreSQL.
     """
     if input_file.endswith(".parquet") or input_file.endswith(".geoparquet"):
         gdf = gpd.read_parquet(input_file, **kwargs)
     else:
         gdf = gpd.read_file(input_file, **kwargs)
 
-    if gdf.crs.geodetic_crs.equals(CRS.from_epsg(4283).geodetic_crs):
+    if gdf.crs.geodetic_crs.equals(CRS.from_epsg(7844).geodetic_crs) is False:
         gdf = gdf.to_crs(7844)
-    gdf = gdf.to_crs(4326)
+
     return gdf
 
 
@@ -62,7 +62,7 @@ def read_nexis_csv(input_nexis: str, crs: int = 4283) -> gpd.GeoDataFrame:
     """Read NEXIS CSV file into GeoDataFrame
 
     If the CSV's geodetic datum is GDA1994 (which is assumed by default), transform it
-    to GDA2020. Subsequently transform to WGS1984 for ingestion into PostgreSQL.
+    to GDA2020 for ingestion into PostgreSQL.
     """
     nexis_df = pd.read_csv(
         input_nexis,
@@ -102,9 +102,10 @@ def read_nexis_csv(input_nexis: str, crs: int = 4283) -> gpd.GeoDataFrame:
         geometry=gpd.GeoSeries.from_xy(nexis_df.longitude, nexis_df.latitude, crs=crs),
     )
     nexis_gdf = nexis_gdf.drop(columns=["latitude", "longitude"])
-    if nexis_gdf.crs.geodetic_crs.equals(CRS.from_epsg(4283).geodetic_crs):
+
+    # Transform coordinates to GDA2020
+    if nexis_gdf.crs.geodetic_crs.equals(CRS.from_epsg(7844).geodetic_crs) is False:
         nexis_gdf = nexis_gdf.to_crs(7844)
-    nexis_gdf = nexis_gdf.to_crs(4326)
 
     return nexis_gdf
 
@@ -250,7 +251,7 @@ def remove_overlapping_geoms(
 
     # If a bounding box is provided, filter buildings within the bbox
     if bbox is not None:
-        bbox_geom = func.ST_MakeEnvelope(*bbox, 4326)
+        bbox_geom = func.ST_MakeEnvelope(*bbox, 7844)
         select_query = select_query.where(
             func.ST_Intersects(smaller.outline, bbox_geom)
         )
@@ -328,7 +329,7 @@ def flatten_cadastre_geoms(
         "flat_temp_cadastre",
         Base.metadata,
         Column("id", Integer, primary_key=True),
-        Column("geometry", Geometry(geometry_type="POLYGON", srid=4326)),
+        Column("geometry", Geometry(geometry_type="POLYGON", srid=7844)),
     )
     flat_temp_cadastre.create(conn)
 

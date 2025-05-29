@@ -276,7 +276,7 @@ def get_legend_graduated_values(
         .filter(
             (method_filter == "" or Method.name.like(any_(method_filter_list))),
             (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
-            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 4326), Building.outline)),
+            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 7844), Building.outline)),
         )
         .group_by(Building.id)
     ).subquery()
@@ -333,7 +333,7 @@ def get_legend_categorised_values(
         .filter(
             (method_filter == "" or Method.name.like(any_(method_filter_list))),
             (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
-            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 4326), Building.outline)),
+            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 7844), Building.outline)),
         )
         .group_by(Building.id)
     )

@@ -61,7 +61,7 @@ class AddressPoint(Base):
     gnaf_id = Column(String(15), nullable=False)
     address = Column(String, nullable=False)
     geocode_type = Column(String, nullable=True)
-    location = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
+    location = Column(Geometry(geometry_type="POINT", srid=7844), nullable=False)
 
     # Many-to-Many relationship with Building
     buildings = relationship(
@@ -82,7 +82,7 @@ class Building(Base):
         default=uuid.uuid4,
         server_default="gen_random_uuid()",
     )
-    outline = Column(Geometry(geometry_type="POLYGON", srid=4326), nullable=False)
+    outline = Column(Geometry(geometry_type="POLYGON", srid=7844), nullable=False)
     land_use_zone = Column(String, nullable=True)
     min_height_ahd = Column(Float, nullable=False)
     max_height_ahd = Column(Float, nullable=False)

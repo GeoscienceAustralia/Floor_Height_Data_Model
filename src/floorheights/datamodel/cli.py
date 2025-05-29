@@ -33,7 +33,7 @@ def create_dummy_address_point():
     address = AddressPoint(
         gnaf_id="GANSW717206574",
         address="2 BENTLEY PLACE, WAGGA WAGGA, NSW 2650",
-        location="SRID=4326;POINT(147.377214 -35.114780)",
+        location="SRID=7844;POINT(147.377214 -35.114780)",
     )
     session.add(address)
     session.commit()
@@ -47,7 +47,7 @@ def create_dummy_building():
     session = SessionLocal()
     building = Building(
         outline=(
-            "SRID=4326;"
+            "SRID=7844;"
             "POLYGON ((147.37761655448156 -35.11448724509989, 147.37778526244756 -35.11466902926723,"
             "147.37788066971024 -35.11463666981137, 147.37775733837083 -35.11443775405107, "
             "147.37761655448156 -35.11448724509989))"
@@ -143,8 +143,8 @@ def ingest_buildings(
     mask_df = gpd.GeoDataFrame(
         {"id": 1, "geometry": [mask_geom]}, crs=dem_crs.to_string()
     )
-    # Transform mask to WGS84 - might be slightly offset buildings are in GDA94/GDA2020
-    mask_df = mask_df.to_crs(4326)
+    # Transform mask to GDA2020
+    mask_df = mask_df.to_crs(7844)
     mask_bbox = mask_df.total_bounds
 
     click.echo("Loading building footprints...")
@@ -231,7 +231,7 @@ def ingest_buildings(
     # Remove any buildings that sample no data
     buildings = buildings[buildings["min_height_ahd"] != dem.nodata]
     buildings = buildings[buildings["max_height_ahd"] != dem.nodata]
-    buildings = buildings.to_crs(4326)  # Transform back to WGS84
+    buildings = buildings.to_crs(7844)  # Transform back to GDA2020
     buildings = buildings.rename_geometry("outline")
 
     click.echo("Copying to PostgreSQL...")
