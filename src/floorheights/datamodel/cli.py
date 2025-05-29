@@ -909,58 +909,64 @@ def ingest_main_method_images(
                 "ingesting the main methdology floor measures."
             )
 
-        # TODO Implement lidar image ingestion
+        for image_type, image_path in [("panorama", pano_path), ("lidar", lidar_path)]:
+            if image_path:
+                click.echo(f"Ingesting {image_type} images...")
+                # Associate Method IDs with image paths
+                image_df = measure_df[["frame_filename"]].copy()
 
-        # Ingest panorama images
-        if pano_path:
-            click.echo("Ingesting panorama images...")
-            # Associate Method IDs with panorama image paths
-            pano_df = measure_df[["frame_filename"]].copy()
+                # Get image filenames by globbing the image_path
+                image_df["image_path"] = image_df.frame_filename.apply(
+                    lambda filename: list(
+                        Path(image_path).glob(f"{Path(filename).stem}*")
+                    )
+                )
+                if image_df["image_path"].apply(len).sum() == 0:
+                    raise click.UsageError(
+                        f"No {image_type} images found in the path '{image_path}'."
+                    )
 
-            # Get pano filenames by globbing the pano_path
-            pano_df["pano_path"] = pano_df.frame_filename.apply(
-                lambda filename: list(Path(pano_path).glob(f"{Path(filename).stem}*"))
-            )
-            # Normalise so that each row contains one filepath
-            pano_df = pano_df.explode("pano_path")
-            pano_df = pano_df[pano_df["pano_path"].notna()]
+                # Normalise so that each row contains one filepath
+                image_df = image_df.explode("image_path")
+                image_df = image_df[image_df["image_path"].notna()]
 
-            # Add ID and additional fields
-            pano_df["id"] = [uuid.uuid4() for _ in range(len(pano_df.index))]
-            pano_df = pano_df.set_index(["id"], drop=True)
-            pano_df["filename"] = pano_df.pano_path.apply(lambda path: Path(path).name)
-            pano_df["type"] = "panorama"
+                # Add ID and additional fields
+                image_df["id"] = [uuid.uuid4() for _ in range(len(image_df.index))]
+                image_df = image_df.set_index(["id"], drop=True)
+                image_df["filename"] = image_df.image_path.apply(
+                    lambda path: Path(path).name
+                )
+                image_df["type"] = image_type
 
-            # Join the floor_measure_ids
-            pano_df = pano_df.join(
-                measure_df[["id", "frame_filename"]].set_index("frame_filename"),
-                on="frame_filename",
-            )
-            pano_df = pano_df.rename(columns={"id": "floor_measure_id"})
+                # Join the floor_measure_ids
+                image_df = image_df.join(
+                    measure_df[["id", "frame_filename"]].set_index("frame_filename"),
+                    on="frame_filename",
+                )
+                image_df = image_df.rename(columns={"id": "floor_measure_id"})
 
-            # Create byte arrays of the images
-            pano_df["image_data"] = pano_df.pano_path.apply(
-                lambda filename: image_to_bytearray(filename)
-            )
+                # Create byte arrays of the images
+                image_df["image_data"] = image_df.image_path.apply(
+                    lambda filename: image_to_bytearray(filename)
+                )
 
-            pano_df = pano_df.drop(columns=["frame_filename", "pano_path"], axis=1)
+                image_df = image_df.drop(
+                    columns=["frame_filename", "image_path"], axis=1
+                )
 
-            pano_df.to_sql(
-                "floor_measure_image",
-                conn,
-                schema="public",
-                if_exists="append",
-                index=True,
-                dtype={
-                    "id": UUID,
-                    "image_data": LargeBinary,
-                    "floor_measure_id": UUID,
-                    "type": String,
-                },
-            )
-
-        if lidar_path:
-            raise NotImplementedError
+                image_df.to_sql(
+                    "floor_measure_image",
+                    conn,
+                    schema="public",
+                    if_exists="append",
+                    index=True,
+                    dtype={
+                        "id": UUID,
+                        "image_data": LargeBinary,
+                        "floor_measure_id": UUID,
+                        "type": String,
+                    },
+                )
 
     click.echo("Image ingestion complete")
 
