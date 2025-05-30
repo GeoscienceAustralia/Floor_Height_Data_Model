@@ -145,12 +145,12 @@ def ingest_buildings(
     )
     # Transform mask to GDA2020
     mask_df = mask_df.to_crs(7844)
-    mask_bbox = mask_df.total_bounds
+    mask_bbox = tuple(map(float, mask_df.total_bounds))
 
     click.echo("Loading building footprints...")
     try:
         buildings = etl.read_ogr_file(
-            input_buildings, columns=["geometry"], bbox=tuple(mask_bbox)
+            input_buildings, columns=["geometry"], bbox=mask_bbox
         )
     except Exception as error:
         raise click.exceptions.FileError(input_buildings, error)
@@ -250,7 +250,7 @@ def ingest_buildings(
         if remove_overlapping:
             click.echo("Removing overlapping buildings...")
             result = etl.remove_overlapping_geoms(
-                session, remove_overlapping, bbox=mask_bbox.tolist()
+                session, remove_overlapping, bbox=mask_bbox
             )
             click.echo(f"Removed {result.rowcount} overlapping buildings...")
 
