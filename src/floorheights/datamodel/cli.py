@@ -155,7 +155,7 @@ def ingest_buildings(
     except Exception as error:
         raise click.exceptions.FileError(input_buildings, error)
 
-    buildings = buildings[buildings.geom_type == "Polygon"]  # Remove multipolygons
+    buildings = buildings.explode()
     buildings = buildings.to_crs(
         dem_crs.to_epsg()
     )  # Transform buildings to CRS of our DEM
