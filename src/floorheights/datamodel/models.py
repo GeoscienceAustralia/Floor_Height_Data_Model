@@ -61,6 +61,7 @@ class AddressPoint(Base):
     gnaf_id = Column(String(15), nullable=False)
     address = Column(String, nullable=False)
     geocode_type = Column(String, nullable=True)
+    primary_secondary = Column(String, nullable=True)
     location = Column(Geometry(geometry_type="POINT", srid=7844), nullable=False)
 
     # Many-to-Many relationship with Building

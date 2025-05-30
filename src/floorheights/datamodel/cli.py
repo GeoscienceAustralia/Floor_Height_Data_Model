@@ -71,7 +71,12 @@ def ingest_address_points(input_address: str, chunksize: int):
         click.echo("Loading address points...")
         address = etl.read_ogr_file(
             input_address,
-            columns=["ADDRESS_DETAIL_PID", "COMPLETE_ADDRESS", "GEOCODE_TYPE"],
+            columns=[
+                "ADDRESS_DETAIL_PID",
+                "COMPLETE_ADDRESS",
+                "GEOCODE_TYPE",
+                "PRIMARY_SECONDARY",
+            ],
         )
     except Exception as error:
         raise click.exceptions.FileError(Path(input_address).name, error)
@@ -85,6 +90,7 @@ def ingest_address_points(input_address: str, chunksize: int):
             "COMPLETE_ADDRESS": "address",
             "ADDRESS_DETAIL_PID": "gnaf_id",
             "GEOCODE_TYPE": "geocode_type",
+            "PRIMARY_SECONDARY": "primary_secondary",
         }
     )
     address = address.rename_geometry("location")
@@ -270,17 +276,10 @@ def join_address_buildings(
     with session.begin():
         conn = session.connection()
         Base = declarative_base()
-
-        click.echo("Performing join by knn...")
-        # Perform address-building matches for addresses geocoded to building centroids
-        select_query = etl.build_address_match_query(
-            join_by="knn", knn_max_distance=5
-        ).where(AddressPoint.geocode_type == "BUILDING CENTROID")
-        etl.insert_address_building_association(session, select_query)
-
         click.echo("Loading cadastre...")
         try:
             cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+            cadastre_bbox = tuple(map(float, cadastre_gdf.total_bounds))
         except Exception as error:
             raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
@@ -302,23 +301,58 @@ def join_address_buildings(
                 session, conn, Base, temp_cadastre
             )
 
-        click.echo("Performing join with cadastre...")
-        # Performs address-building matches by joining to common cadastre lots for
-        # addresses geocoded to property centroids
-        select_query = etl.build_address_match_query("cadastre", temp_cadastre)
+        click.echo("Performing join for building centroid addresses...")
+        # Match for addresses geocoded to building centroids using KNN max distance 5m
+        select_query = etl.build_address_match_query(
+            join_by="knn",
+            geocode_type="BUILDING CENTROID",
+            knn_max_distance=5,
+            bbox=cadastre_bbox,
+        )
+        etl.insert_address_building_association(session, select_query)
+
+        click.echo("Performing join for property centroid addresses...")
+        # Create base query for joining property centroid addresses
+        select_query = etl.build_address_match_query(
+            join_by="cadastre",
+            geocode_type="PROPERTY CENTROID",
+            cadastre=temp_cadastre,
+            bbox=cadastre_bbox,
+        )
 
         if join_largest:
             click.echo("Joining with largest building on lot...")
-            # Modify select to join to largest building on the lot for distinct address
-            select_query = select_query.order_by(
-                AddressPoint.id, func.ST_Area(Building.outline).desc()
-            ).distinct(AddressPoint.id)
-        etl.insert_address_building_association(session, select_query)
+            # Modify base query to join to largest building on the lot for distinct
+            # non-primary and non-secondary address (i.e. non-strata)
+            select_query_non_strata = (
+                select_query.where(
+                    AddressPoint.primary_secondary == None,
+                )
+                .order_by(AddressPoint.id, func.ST_Area(Building.outline).desc())
+                .distinct(AddressPoint.id)
+            )
+            etl.insert_address_building_association(session, select_query_non_strata)
 
-        # Finish up by joining addresses to nearest-neighbour buildings
-        # that aren't within the cadastre and are within a 10m distance threshold
-        select_query = etl.build_address_match_query("knn", temp_cadastre, 10)
-        etl.insert_address_building_association(session, select_query)
+            # Modify base query to join to all buildings on the lot for primary
+            # addresses (i.e. strata)
+            select_query_strata = select_query.where(
+                AddressPoint.primary_secondary == "PRIMARY",
+            )
+            etl.insert_address_building_association(session, select_query_strata)
+
+            # Finally, join by intersection for property centroid, secondary addresses
+            # (i.e. strata addresses that intersect a building)
+            select_query = etl.build_address_match_query(
+                join_by="intersects",
+                geocode_type="PROPERTY CENTROID",
+                cadastre=temp_cadastre,
+                bbox=cadastre_bbox,
+            ).where(
+                AddressPoint.primary_secondary == "SECONDARY",
+            )
+            etl.insert_address_building_association(session, select_query)
+        else:
+            etl.insert_address_building_association(session, select_query)
 
         temp_cadastre.drop(conn)
 

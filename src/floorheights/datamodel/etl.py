@@ -456,7 +456,9 @@ def join_by_knn(
 def build_address_match_query(
     join_by: Literal["intersects", "cadastre", "knn"],
     cadastre: Table = None,
+    geocode_type: str = None,
     knn_max_distance: int = 10,
+    bbox: tuple = None,
 ) -> Select:
     """Build address matching query"""
     select_fields = [
@@ -466,7 +468,7 @@ def build_address_match_query(
 
     if join_by == "intersects":
         select_query = join_by_contains(select_fields, AddressPoint.location).where(
-            AddressPoint.geocode_type == "BUILDING CENTROID"
+            AddressPoint.geocode_type == geocode_type
         )
     elif join_by == "cadastre":
         select_query = join_by_cadastre(
@@ -476,7 +478,7 @@ def build_address_match_query(
             cadastre,
             cadastre.c.geometry,
         ).where(
-            AddressPoint.geocode_type == "PROPERTY CENTROID",
+            AddressPoint.geocode_type == geocode_type,
             # Don't join to any buildings already joined by within
             ~exists().where(
                 address_point_building_association.c.building_id == Building.id,
@@ -501,6 +503,12 @@ def build_address_match_query(
             cadastre_table=cadastre,
             cadastre_geom=cadastre_geom,
             knn_max_distance=knn_max_distance,
+        ).where(AddressPoint.geocode_type == geocode_type)
+
+    if bbox is not None:
+        bbox_geom = func.ST_MakeEnvelope(*bbox, 7844)
+        select_query = select_query.where(
+            func.ST_Intersects(AddressPoint.location, bbox_geom)
         )
 
     return select_query
