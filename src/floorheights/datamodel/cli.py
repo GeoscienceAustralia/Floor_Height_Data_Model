@@ -258,20 +258,13 @@ def ingest_buildings(
 
 
 @click.command()
-@click.option("-c", "--input-cadastre", type=str, help="Input cadastre vector file path to support address joining.")  # fmt: skip
+@click.option("-c", "--input-cadastre", required=True, type=str, help="Input cadastre vector file path to support address joining.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join addresses to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def join_address_buildings(
     input_cadastre: str, flatten_cadastre: bool, join_largest: bool
 ):
     """Join address points to building outlines"""
-    if join_largest and not input_cadastre:
-        raise click.UsageError(
-            "--join-largest-building must be used with --input-cadastre"
-        )
-    if flatten_cadastre and not input_cadastre:
-        raise click.UsageError("--flatten-cadastre must be used with --input-cadastre")
-
     click.secho("Joining addresses to buildings", bold=True)
     session = SessionLocal()
     with session.begin():
@@ -279,61 +272,55 @@ def join_address_buildings(
         Base = declarative_base()
 
         click.echo("Performing join by knn...")
-        # Selects address-building matches for addresses geocoded to building centroids
+        # Perform address-building matches for addresses geocoded to building centroids
         select_query = etl.build_address_match_query(
             join_by="knn", knn_max_distance=5
         ).where(AddressPoint.geocode_type == "BUILDING CENTROID")
         etl.insert_address_building_association(session, select_query)
 
-        if input_cadastre:
-            click.echo("Loading cadastre...")
-            try:
-                cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
-            except Exception as error:
-                raise click.exceptions.FileError(Path(input_cadastre).name, error)
+        click.echo("Loading cadastre...")
+        try:
+            cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
+        except Exception as error:
+            raise click.exceptions.FileError(Path(input_cadastre).name, error)
 
-            click.echo("Copying cadastre to PostgreSQL...")
-            cadastre_gdf.to_postgis(
-                "temp_cadastre",
-                conn,
-                schema="public",
-                if_exists="replace",
-                index=True,
-                index_label="id",
+        click.echo("Copying cadastre to PostgreSQL...")
+        cadastre_gdf.to_postgis(
+            "temp_cadastre",
+            conn,
+            schema="public",
+            if_exists="replace",
+            index=True,
+            index_label="id",
+        )
+        # Get temp_cadastre table model from database
+        temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
+
+        if flatten_cadastre:
+            click.echo("Flattening cadastre geometries...")
+            temp_cadastre = etl.flatten_cadastre_geoms(
+                session, conn, Base, temp_cadastre
             )
-            # Get temp_cadastre table model from database
-            temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
-            if flatten_cadastre:
-                click.echo("Flattening cadastre geometries...")
-                temp_cadastre = etl.flatten_cadastre_geoms(
-                    session, conn, Base, temp_cadastre
-                )
+        click.echo("Performing join with cadastre...")
+        # Performs address-building matches by joining to common cadastre lots for
+        # addresses geocoded to property centroids
+        select_query = etl.build_address_match_query("cadastre", temp_cadastre)
 
-            click.echo("Performing join with cadastre...")
-            # Selects address-building matches by joining to common cadastre lots for
-            # addresses geocoded to property centroids
-            select_query = etl.build_address_match_query("cadastre", temp_cadastre)
+        if join_largest:
+            click.echo("Joining with largest building on lot...")
+            # Modify select to join to largest building on the lot for distinct address
+            select_query = select_query.order_by(
+                AddressPoint.id, func.ST_Area(Building.outline).desc()
+            ).distinct(AddressPoint.id)
+        etl.insert_address_building_association(session, select_query)
 
-            if join_largest:
-                click.echo("Joining with largest building on lot...")
-                # Modify select to join to largest building on the lot for distinct address
-                select_query = select_query.order_by(
-                    AddressPoint.id, func.ST_Area(Building.outline).desc()
-                ).distinct(AddressPoint.id)
-            etl.insert_address_building_association(session, select_query)
+        # Finish up by joining addresses to nearest-neighbour buildings
+        # that aren't within the cadastre and are within a 10m distance threshold
+        select_query = etl.build_address_match_query("knn", temp_cadastre, 10)
+        etl.insert_address_building_association(session, select_query)
 
-            # Finish up by joining addresses to nearest-neighbour buildings
-            # that aren't within the cadastre and are within a distance threshold
-            select_query = etl.build_address_match_query("knn", temp_cadastre, 10)
-            etl.insert_address_building_association(session, select_query)
-        else:
-            # If we don't use a cadastre, do a nearest-neighbour join
-            select_query = etl.build_address_match_query("knn")
-            etl.insert_address_building_association(session, select_query, 10)
-
-        if input_cadastre:
-            temp_cadastre.drop(conn)
+        temp_cadastre.drop(conn)
 
     click.echo("Joining complete")
 
