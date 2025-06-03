@@ -510,27 +510,11 @@ def ingest_nexis_measures(
                 session, modelled_query_cadastre
             )
 
-            # Third, by nearest-neighbour outside the extents of the cadastre
-            modelled_query_cadastre_knn = etl.build_floor_measure_query(
-                temp_nexis,
-                "floor_height_m",
-                method_id,
-                accuracy_measure=50,
-                storey=0,
-                join_by="knn",
-                cadastre=temp_cadastre,
-            ).where(temp_nexis.c.lid.notlike("GA%"))
-            modelled_inserted_cadastre_knn_ids = etl.insert_floor_measure(
-                session, modelled_query_cadastre_knn
-            )
-
             # Concat the inserted id lists
-            modelled_inserted_ids += (
-                modelled_inserted_cadastre_ids + modelled_inserted_cadastre_knn_ids
-            )
+            modelled_inserted_ids += modelled_inserted_cadastre_ids
 
-            # List of tuples to list of ids
-            modelled_inserted_ids = [id for (id,) in modelled_inserted_ids]
+        # List of tuples to list of ids
+        modelled_inserted_ids = [id for (id,) in modelled_inserted_ids]
 
         if modelled_inserted_ids:
             nexis_dataset_id = etl.get_or_create_dataset_id(
