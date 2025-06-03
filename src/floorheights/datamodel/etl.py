@@ -391,8 +391,6 @@ def join_by_knn(
     point_table: DeclarativeMeta | Table,
     point_geom: InstrumentedAttribute | Column,
     additional_select_fields: list[InstrumentedAttribute | Column],
-    cadastre_table: Table = None,
-    cadastre_geom: Column = None,
     knn_max_distance: int = 10,
 ) -> Select:
     """Join by K-Nearest Neighbour helper function
@@ -410,45 +408,21 @@ def join_by_knn(
         .lateral()
     )
 
-    select_query = select(
-        *additional_select_fields,
-        lateral_subquery.c.building_id.label("building_id"),
-    ).select_from(point_table)
-
-    if cadastre_table is None:
-        # Nearest neighbour join for all addresses, if we don't have a cadastre
-        select_query = select_query.join(lateral_subquery, literal(True)).where(
+    select_query = (
+        select(
+            *additional_select_fields,
+            lateral_subquery.c.building_id.label("building_id"),
+        )
+        .select_from(point_table)
+        .join(lateral_subquery, literal(True))
+        .where(
             func.ST_Distance(
                 func.cast(point_geom, Geography(srid=7844)),
                 func.cast(lateral_subquery.c.outline, Geography(srid=7844)),
             )
             < knn_max_distance,
         )
-    else:
-        # Nearest neighbour join for addresses outside the cadastre extent
-        select_query = (
-            # Outer join so we only take points outside the cadastre
-            select_query.outerjoin(
-                cadastre_table,
-                func.ST_Within(point_geom, cadastre_geom),
-            )
-            .join(lateral_subquery, literal(True))
-            .where(
-                cadastre_geom == None,
-                # Join addresses to nearest building if it is within a distance threshold
-                func.ST_Distance(
-                    func.cast(point_geom, Geography(srid=7844)),
-                    func.cast(lateral_subquery.c.outline, Geography(srid=7844)),
-                )
-                < knn_max_distance,
-            )
-            .where(
-                ~exists().where(
-                    address_point_building_association.c.address_point_id
-                    == AddressPoint.id,
-                )
-            )
-        )
+    )
 
     return select_query
 
@@ -458,6 +432,7 @@ def build_address_match_query(
     cadastre: Table = None,
     geocode_type: str = None,
     knn_max_distance: int = 10,
+    skip_matched_buildings: bool = False,
     bbox: tuple = None,
 ) -> Select:
     """Build address matching query"""
@@ -467,9 +442,7 @@ def build_address_match_query(
     ]
 
     if join_by == "intersects":
-        select_query = join_by_contains(select_fields, AddressPoint.location).where(
-            AddressPoint.geocode_type == geocode_type
-        )
+        select_query = join_by_contains(select_fields, AddressPoint.location)
     elif join_by == "cadastre":
         select_query = join_by_cadastre(
             select_fields,
@@ -477,19 +450,8 @@ def build_address_match_query(
             AddressPoint.location,
             cadastre,
             cadastre.c.geometry,
-        ).where(
-            AddressPoint.geocode_type == geocode_type,
-            # Don't join to any buildings already joined by within
-            ~exists().where(
-                address_point_building_association.c.building_id == Building.id,
-            ),
         )
     elif join_by == "knn":
-        if cadastre is not None:
-            cadastre_geom = cadastre.c.geometry
-        else:
-            cadastre_geom = None
-
         lateral_fields = [
             AddressPoint.id.label("address_point_id"),
             Building.id.label("building_id"),
@@ -500,10 +462,18 @@ def build_address_match_query(
             AddressPoint,
             AddressPoint.location,
             additional_select_fields=additional_select_fields,
-            cadastre_table=cadastre,
-            cadastre_geom=cadastre_geom,
             knn_max_distance=knn_max_distance,
-        ).where(AddressPoint.geocode_type == geocode_type)
+        )
+
+    if geocode_type is not None:
+        select_query = select_query.where(AddressPoint.geocode_type == geocode_type)
+
+    if skip_matched_buildings is True:
+        select_query = select_query.where(
+            ~exists().where(
+                address_point_building_association.c.building_id == Building.id,
+            )
+        )
 
     if bbox is not None:
         bbox_geom = func.ST_MakeEnvelope(*bbox, 7844)
@@ -651,11 +621,6 @@ def build_floor_measure_query(
             )
         )
     elif join_by == "knn":
-        if cadastre is not None:
-            cadastre_geom = cadastre.c.geometry
-        else:
-            cadastre_geom = None
-
         # Remove building id from additional fields because we select it from the lateral subquery
         select_fields.remove(building_id_field)
 
@@ -667,8 +632,6 @@ def build_floor_measure_query(
             floor_measure_table,
             floor_measure_table.c.geometry,
             additional_select_fields=select_fields,
-            cadastre_table=cadastre,
-            cadastre_geom=cadastre_geom,
         )
     else:
         select_query = select(*select_fields).select_from(floor_measure_table)
@@ -782,6 +745,7 @@ def build_buildings_query() -> Select:
             AddressPoint.gnaf_id,
             AddressPoint.address.label("gnaf_address"),
             AddressPoint.geocode_type,
+            AddressPoint.primary_secondary,
             Building.land_use_zone,
             Building.outline,
         )

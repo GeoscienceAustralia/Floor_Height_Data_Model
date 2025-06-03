@@ -279,9 +279,11 @@ def join_address_buildings(
         click.echo("Loading cadastre...")
         try:
             cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
-            cadastre_bbox = tuple(map(float, cadastre_gdf.total_bounds))
         except Exception as error:
             raise click.exceptions.FileError(Path(input_cadastre).name, error)
+
+        cadastre_bbox = tuple(map(float, cadastre_gdf.total_bounds))
+        cadastre_gdf = cadastre_gdf.explode()
 
         click.echo("Copying cadastre to PostgreSQL...")
         cadastre_gdf.to_postgis(
@@ -292,6 +294,7 @@ def join_address_buildings(
             index=True,
             index_label="id",
         )
+
         # Get temp_cadastre table model from database
         temp_cadastre = Table("temp_cadastre", Base.metadata, autoload_with=conn)
 
@@ -317,6 +320,7 @@ def join_address_buildings(
             join_by="cadastre",
             geocode_type="PROPERTY CENTROID",
             cadastre=temp_cadastre,
+            skip_matched_buildings=False,
             bbox=cadastre_bbox,
         )
 
@@ -340,17 +344,19 @@ def join_address_buildings(
             )
             etl.insert_address_building_association(session, select_query_strata)
 
-            # Finally, join by intersection for property centroid, secondary addresses
+            # Join by intersection for property centroid, secondary addresses
             # (i.e. strata addresses that intersect a building)
-            select_query = etl.build_address_match_query(
+            select_query_strata_secondary = etl.build_address_match_query(
                 join_by="intersects",
                 geocode_type="PROPERTY CENTROID",
-                cadastre=temp_cadastre,
+                skip_matched_buildings=True,
                 bbox=cadastre_bbox,
             ).where(
                 AddressPoint.primary_secondary == "SECONDARY",
             )
-            etl.insert_address_building_association(session, select_query)
+            etl.insert_address_building_association(
+                session, select_query_strata_secondary
+            )
         else:
             etl.insert_address_building_association(session, select_query)
 
