@@ -742,8 +742,8 @@ def ingest_validation_measures(
                 + survey_knn_ids
             )
 
-            # List of tuples to list of ids
-            validation_inserted_ids = [id for (id,) in validation_inserted_ids]
+        # List of tuples to list of ids
+        validation_inserted_ids = [id for (id,) in validation_inserted_ids]
 
         if validation_inserted_ids:
             if not dataset_name:
