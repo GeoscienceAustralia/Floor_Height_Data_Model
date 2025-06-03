@@ -65,7 +65,12 @@ def create_dummy_building():
 @click.option("-i", "--input-address", required=True, type=str, help="Input address points file path.")  # fmt: skip
 @click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 def ingest_address_points(input_address: str, chunksize: int):
-    """Ingest address points"""
+    """Ingest address points
+
+    Takes an input address points file and ingests it into the data model. Optionally
+    specify the number of rows in each batch to be written at a time, may be required
+    if ingesting large datasets to avoid memory issues.
+    """
     click.secho("Ingesting address points", bold=True)
     try:
         click.echo("Loading address points...")
@@ -129,7 +134,13 @@ def ingest_buildings(
     remove_small: float,
     remove_overlapping: float,
 ):
-    """Ingest building footprints"""
+    """Ingest building footprints
+
+    Takes an input building footprints polygon file and ingests it into the data model.
+    Requires an input DEM file to sample the building footprint ground height.
+    Optionally specify the number of rows in each batch to be written at a time, may be
+    required if ingesting large datasets to avoid memory issues.
+    """
     if join_land_zoning and not land_zoning_field:
         raise click.UsageError(
             "--join-land-zoning must be used with --land-zoning-field"
