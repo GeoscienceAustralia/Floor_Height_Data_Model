@@ -379,15 +379,13 @@ def join_address_buildings(input_cadastre: str, flatten_cadastre: bool):
 @click.command()
 @click.option("-i", "--input-nexis", required=True, type=str, help="Input NEXIS CSV file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
-@click.option("--clip-to-cadastre", is_flag=True, help="Clip measure points by the cadastre dataset extents. This will speed up processing, but won't join measures outside the extent of the cadastre.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_measures(
     input_nexis: str,
-    clip_to_cadastre: str,
+    input_cadastre: bool,
     flatten_cadastre: bool,
     join_largest: bool,
-    input_cadastre: bool,
 ):
     """Ingest NEXIS floor height measures"""
     if clip_to_cadastre and not input_cadastre:
@@ -416,10 +414,8 @@ def ingest_nexis_measures(
                 cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
             except Exception as error:
                 raise click.exceptions.FileError(Path(input_cadastre).name, error)
-            if clip_to_cadastre:
-                click.echo("Clipping NEXIS points to cadastre...")
-                # Clip NEXIS points to cadastre extent
-                nexis_gdf = gpd.clip(nexis_gdf, cadastre_gdf)
+            # Clip NEXIS points to cadastre extent
+            nexis_gdf = gpd.clip(nexis_gdf, cadastre_gdf)
         else:
             # Subset NEXIS points based GNAF IDs in the database
             gnaf_ids = session.execute(select(AddressPoint.gnaf_id)).all()
