@@ -548,21 +548,21 @@ def ingest_nexis_measures(
 
 @click.command()
 @click.option("-i", "--input-data", required=True, type=str, help="Input validation points dataset file path.")  # fmt: skip
-@click.option("-c", "--input-cadastre", type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
-@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
-@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
 @click.option("--step-size", type=float, default=0.28, show_default=True, help="Step size value in metres.")  # fmt: skip
+@click.option("-c", "--input-cadastre", required=False, type=str, help="Input cadastre vector dataset file path to support address joining.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="Validation", show_default=True, help="The floor measure dataset name.")  # fmt: skip
 @click.option("--dataset-desc", type=str, help="The floor measure dataset description.")  # fmt: skip
 @click.option("--dataset-src", type=str, help="The floor measure dataset source.")  # fmt: skip
 def ingest_validation_measures(
     input_data: str,
+    ffh_field: str,
+    step_size: float,
     input_cadastre: str,
     flatten_cadastre: bool,
     join_largest: bool,
-    ffh_field: str,
-    step_size: float,
     dataset_name: str,
     dataset_desc: str,
     dataset_src: str,
