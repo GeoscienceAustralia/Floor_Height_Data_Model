@@ -280,6 +280,9 @@ def ingest_buildings(
 def join_address_buildings(input_cadastre: str, flatten_cadastre: bool):
     """Join address points to building outlines
 
+    Requires an input cadastre vector file to support joining, and can optionally
+    flatten the cadastre geometries to reduce false matches.
+
     \b
     The join is performed in two steps:
     1. Match for addresses geocoded to building centroids using a KNN join with a
@@ -341,7 +344,7 @@ def join_address_buildings(input_cadastre: str, flatten_cadastre: bool):
             bbox=cadastre_bbox,
         )
 
-        # Modify base query to join to largest building on the lot for distinct
+        # Modify base query to join to largest building on the parcel for distinct
         # non-primary and non-secondary address (i.e. non-strata addresses)
         select_query_non_strata = (
             select_query.where(
@@ -352,7 +355,7 @@ def join_address_buildings(input_cadastre: str, flatten_cadastre: bool):
         )
         etl.insert_address_building_association(session, select_query_non_strata)
 
-        # Modify base query to join to all buildings on the lot for primary addresses
+        # Modify base query to join to all buildings on the parcel for primary addresses
         # (i.e. strata addresses)
         select_query_strata = select_query.where(
             AddressPoint.primary_secondary == "PRIMARY",
@@ -380,16 +383,28 @@ def join_address_buildings(input_cadastre: str, flatten_cadastre: bool):
 @click.option("-i", "--input-nexis", required=True, type=str, help="Input NEXIS CSV file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
-@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_measures(
     input_nexis: str,
     input_cadastre: bool,
     flatten_cadastre: bool,
     join_largest: bool,
 ):
-    """Ingest NEXIS floor height measures"""
-    if clip_to_cadastre and not input_cadastre:
-        raise click.UsageError("--clip-to-cadastre must be used with --input-cadastre")
+    """Ingest NEXIS floor height measures
+
+    Takes an input CSV file containing NEXIS floor measures and ingests it into the data
+    model. Optionally takes an input cadastre vector file to support joining non-GNAF
+    addresses. Can also optionally flatten the cadastre geometries and join non-GNAF
+    measures to the largest building on the parcel to reduce false matches.
+    Assumes the NEXIS points are in GDA1994 (EPSG:4823).
+
+    \b
+    The NEXIS points are joined to buildings in two steps:
+
+    1. Match NEXIS points to buildings that share a common GNAF ID.
+    2. Match NEXIS points to buildings for Non-GNAF IDs by point-building intersection,
+       then by common cadastral parcel.
+    """
     if join_largest and not input_cadastre:
         raise click.UsageError(
             "--join-largest-building must be used with --input-cadastre"
@@ -452,7 +467,7 @@ def ingest_nexis_measures(
         modelled_inserted_ids = etl.insert_floor_measure(session, modelled_query_gnaf)
 
         click.echo("Inserting non-GNAF records into floor_measure table...")
-        # Build select queries to insert into the floor_measure table for non GNAF addresses
+        # Build select queries to insert into the floor_measure table for non-GNAF addresses
         # First, by point-building intersection
         modelled_query_intersect = etl.build_floor_measure_query(
             temp_nexis,
@@ -489,7 +504,7 @@ def ingest_nexis_measures(
                     session, conn, Base, temp_cadastre
                 )
 
-            # Second, by joining to buildings with a common cadastre lot
+            # Second, by joining to buildings with a common cadastre parcel
             modelled_query_cadastre = etl.build_floor_measure_query(
                 temp_nexis,
                 "floor_height_m",
@@ -501,8 +516,8 @@ def ingest_nexis_measures(
             ).where(temp_nexis.c.lid.notlike("GA%"))
 
             if join_largest:
-                click.echo("Joining with largest building on lot...")
-                # Modify select to join to largest building on the lot for distinct points
+                click.echo("Joining with largest building on parcel...")
+                # Modify select to join to largest building on the parcel for distinct points
                 modelled_query_cadastre = modelled_query_cadastre.order_by(
                     temp_nexis.c.id, func.ST_Area(Building.outline).desc()
                 ).distinct(temp_nexis.c.id)
@@ -535,7 +550,7 @@ def ingest_nexis_measures(
 @click.option("-i", "--input-data", required=True, type=str, help="Input validation points dataset file path.")  # fmt: skip
 @click.option("-c", "--input-cadastre", type=str, help="Input cadastre OGR dataset file path to support address joining.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
-@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the lot. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
 @click.option("--step-size", type=float, default=0.28, show_default=True, help="Step size value in metres.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="Validation", show_default=True, help="The floor measure dataset name.")  # fmt: skip
@@ -654,7 +669,7 @@ def ingest_validation_measures(
         validation_inserted_ids = step_count_intersects_ids + survey_intersects_ids
 
         if input_cadastre:
-            # Second, by joining to buildings with a common cadastre lot
+            # Second, by joining to buildings with a common cadastre parcel
             step_count_query_cadastre_knn = etl.build_floor_measure_query(
                 temp_method,
                 "floor_height_m",
@@ -679,8 +694,8 @@ def ingest_validation_measures(
             )
 
             if join_largest:
-                click.echo("Joining with largest building on lot...")
-                # Modify select to join to largest building on the lot for distinct points
+                click.echo("Joining with largest building on parcel...")
+                # Modify select to join to largest building on the parcel for distinct points
                 step_count_query_cadastre_knn = step_count_query_cadastre_knn.order_by(
                     temp_method.c.id, func.ST_Area(Building.outline).desc()
                 ).distinct(temp_method.c.id)
