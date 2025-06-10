@@ -62,9 +62,9 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--input-address", required=True, type=str, help="Input address points file path.")  # fmt: skip
+@click.option("-i", "--input-address", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input address points file path.")  # fmt: skip
 @click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
-def ingest_address_points(input_address: str, chunksize: int):
+def ingest_address_points(input_address: click.Path, chunksize: int):
     """Ingest address points
 
     Takes an input address points file and ingests it into the data model. Optionally
@@ -84,7 +84,7 @@ def ingest_address_points(input_address: str, chunksize: int):
             ],
         )
     except Exception as error:
-        raise click.exceptions.FileError(Path(input_address).name, error)
+        raise click.exceptions.FileError(input_address, error)
 
     address = address[
         (address.GEOCODE_TYPE == "BUILDING CENTROID")
@@ -117,19 +117,19 @@ def ingest_address_points(input_address: str, chunksize: int):
 
 @click.command()
 @click.option("-i", "--input-buildings", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input building footprint file path.")  # fmt: skip
-@click.option("-d", "--input-dem", required=True, type=click.File(), help="Input DEM file path, used to sample building footprint ground height.")  # fmt: skip
+@click.option("-d", "--input-dem", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help="Input DEM file path, used to sample building footprint ground height.")  # fmt: skip
 @click.option("-s", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
-@click.option("--split-by-cadastre", type=str, help="Split buildings by cadastre, specify input cadastre vector file path for splitting.")  # fmt: skip
-@click.option("--join-land-zoning", type=str, help="Join land zoning type to buildings, specify input land zoning vector file path.")  # fmt: skip
+@click.option("--split-by-cadastre", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Split buildings by cadastre, specify input cadastre vector file path for splitting.")  # fmt: skip
+@click.option("--join-land-zoning", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Join land zoning type to buildings, specify input land zoning vector file path.")  # fmt: skip
 @click.option("--land-zoning-field", type=str, help="The land zoning dataset's field name to join to buildings.")  # fmt: skip
 @click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
 @click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
 def ingest_buildings(
     input_buildings: click.Path,
-    input_dem: click.File,
+    input_dem: click.Path,
     chunksize: int,
-    split_by_cadastre: str,
-    join_land_zoning: str,
+    split_by_cadastre: click.Path,
+    join_land_zoning: click.Path,
     land_zoning_field: str,
     remove_small: float,
     remove_overlapping: float,
@@ -149,10 +149,10 @@ def ingest_buildings(
     click.secho("Ingesting building footprints", bold=True)
     try:
         click.echo("Loading DEM...")
-        dem = rasterio.open(input_dem.name)
+        dem = rasterio.open(input_dem)
         dem_crs = dem.crs
     except Exception as error:
-        raise click.exceptions.FileError(input_dem.name, error)
+        raise click.exceptions.FileError(input_dem, error)
 
     click.echo("Creating mask...")
     bounds = dem.bounds
@@ -183,7 +183,7 @@ def ingest_buildings(
             cadastre = etl.read_ogr_file(split_by_cadastre, columns=["geometry"])
             cadastre = cadastre.to_crs(dem.crs)
         except Exception as error:
-            raise click.exceptions.FileError(Path(split_by_cadastre).name, error)
+            raise click.exceptions.FileError(split_by_cadastre, error)
 
         session = SessionLocal()
         with session.begin():
@@ -232,7 +232,7 @@ def ingest_buildings(
             buildings = buildings.rename(columns={land_zoning_field: "land_use_zone"})
 
         except Exception as error:
-            raise click.exceptions.FileError(Path(join_land_zoning).name, error)
+            raise click.exceptions.FileError(join_land_zoning, error)
 
     click.echo("Sampling DEM with buildings...")
     min_heights, max_heights = etl.sample_dem_with_buildings(dem, buildings)
@@ -299,7 +299,7 @@ def join_address_buildings(input_cadastre: click.Path, flatten_cadastre: bool):
         try:
             cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
         except Exception as error:
-            raise click.exceptions.FileError(Path(input_cadastre).name, error)
+            raise click.exceptions.FileError(input_cadastre, error)
 
         cadastre_bbox = tuple(map(float, cadastre_gdf.total_bounds))
         cadastre_gdf = cadastre_gdf.explode()
@@ -380,12 +380,15 @@ def join_address_buildings(input_cadastre: click.Path, flatten_cadastre: bool):
 
 
 @click.command()
+@click.option("-i", "--input-nexis", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input NEXIS CSV file path.")  # fmt: skip
 @click.option("--accuracy-field", type=str, required=False, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=click.Path(exists=True, file_okay=True, dir_okay=True), default=None, help="Input cadastre vector dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_measures(
+    input_nexis: click.Path,
     accuracy_field: str,
+    input_cadastre: click.Path,
     flatten_cadastre: bool,
     join_largest: bool,
 ):
@@ -436,7 +439,7 @@ def ingest_nexis_measures(
             try:
                 cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
             except Exception as error:
-                raise click.exceptions.FileError(Path(input_cadastre).name, error)
+                raise click.exceptions.FileError(input_cadastre, error)
             # Clip NEXIS points to cadastre extent
             nexis_gdf = gpd.clip(nexis_gdf, cadastre_gdf)
         else:
@@ -555,11 +558,11 @@ def ingest_nexis_measures(
 
 
 @click.command()
-@click.option("-i", "--input-data", required=True, type=str, help="Input validation points dataset file path.")  # fmt: skip
+@click.option("-i", "--input-data", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input validation points dataset file path.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
 @click.option("--accuracy-field", type=str, required=False, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
 @click.option("--step-size", type=float, required=False, is_flag=False, flag_value=0.28, default=None, help="Step size value in metres. [default: 0.28]")  # fmt: skip
-@click.option("-c", "--input-cadastre", required=False, type=str, help="Input cadastre vector dataset file path to support address joining.")  # fmt: skip
+@click.option("-c", "--input-cadastre", required=False, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input cadastre vector dataset file path to support address joining.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 @click.option("--method-name", type=str, required=False, default="Surveyed", help="The floor measure method name.")  # fmt: skip
@@ -567,11 +570,11 @@ def ingest_nexis_measures(
 @click.option("--dataset-desc", type=str, help="The floor measure dataset description.")  # fmt: skip
 @click.option("--dataset-src", type=str, help="The floor measure dataset source.")  # fmt: skip
 def ingest_validation_measures(
-    input_data: str,
+    input_data: click.Path,
     ffh_field: str,
     accuracy_field: str,
     step_size: float,
-    input_cadastre: str,
+    input_cadastre: click.Path,
     flatten_cadastre: bool,
     join_largest: bool,
     method_name: str,
@@ -592,7 +595,7 @@ def ingest_validation_measures(
         click.echo("Loading validation points...")
         method_gdf = etl.read_ogr_file(input_data)
     except Exception as error:
-        raise click.exceptions.FileError(Path(input_data).name, error)
+        raise click.exceptions.FileError(input_data, error)
 
     if ffh_field not in method_gdf.columns:
         raise click.exceptions.BadParameter(
@@ -638,7 +641,7 @@ def ingest_validation_measures(
             try:
                 cadastre_gdf = etl.read_ogr_file(input_cadastre, columns=["geometry"])
             except Exception as error:
-                raise click.exceptions.FileError(Path(input_cadastre).name, error)
+                raise click.exceptions.FileError(input_cadastre, error)
 
             click.echo("Copying cadastre to PostgreSQL...")
             cadastre_gdf.to_postgis(
@@ -800,7 +803,7 @@ def ingest_validation_measures(
 
         if validation_ids:
             if not dataset_name:
-                dataset_name = Path(input_data).name
+                dataset_name = input_data
 
             dataset_id = etl.get_or_create_dataset_id(
                 session, dataset_name, dataset_desc, dataset_src
@@ -914,8 +917,8 @@ def ingest_main_method_measures(
 
 
 @click.command()
-@click.option("--pano-path", type=click.Path(), help="Path to folder containing panorama images.")  # fmt: skip
-@click.option("--lidar-path", type=click.Path(), help="Path to folder containing LIDAR images.")  # fmt: skip
+@click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
+@click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="Main Methodology", help="The floor measure dataset name to attach images to.")  # fmt: skip
 def ingest_main_method_images(
     pano_path: click.Path, lidar_path: click.Path, dataset_name: str
