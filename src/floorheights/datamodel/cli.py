@@ -612,10 +612,6 @@ def ingest_validation_measures(
         method_gdf["accuracy_measure"] = None
 
     method_gdf = method_gdf.rename(columns={ffh_field: "floor_height_m"})
-    if accuracy_field is not None:
-        method_gdf = method_gdf.rename(columns={accuracy_field: "accuracy_measure"})
-    else:
-        method_gdf["accuracy_measure"] = None
     method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True
     )
