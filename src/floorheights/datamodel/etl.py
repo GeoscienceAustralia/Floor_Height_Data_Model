@@ -42,10 +42,23 @@ from floorheights.datamodel.models import (
 
 
 def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
-    """Read OGR file into GeoDataFrame
+    """
+    Read OGR file into a GeoDataFrame.
 
     If the input OGR file's geodetic datum is GDA1994, transform it to GDA2020 for
     ingestion into PostgreSQL.
+
+    Parameters
+    ----------
+    input_file : str
+        Path to the input OGR file.
+    **kwargs : dict
+        Additional arguments to pass to the file reader.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame containing the data from the input file.
     """
     if input_file.endswith(".parquet") or input_file.endswith(".geoparquet"):
         gdf = gpd.read_parquet(input_file, **kwargs)
@@ -59,10 +72,23 @@ def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
 
 
 def read_nexis_csv(input_nexis: str, crs: int = 4283) -> gpd.GeoDataFrame:
-    """Read NEXIS CSV file into GeoDataFrame
+    """
+    Read NEXIS CSV file into a GeoDataFrame.
 
-    If the CSV's geodetic datum is GDA1994 (which is assumed by default), transform it
-    to GDA2020 for ingestion into PostgreSQL.
+    If the CSV's geodetic datum is GDA1994 (assumed by default), transform it to
+    GDA2020 for ingestion into PostgreSQL.
+
+    Parameters
+    ----------
+    input_nexis : str
+        Path to the input NEXIS CSV file.
+    crs : int, optional
+        Coordinate reference system of the input data, by default 4283 (GDA1994).
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        GeoDataFrame containing the data from the CSV file.
     """
     nexis_df = pd.read_csv(
         input_nexis,
@@ -116,17 +142,25 @@ def psql_insert_copy(
     keys: list[str],
     data_iter: Iterable,
 ) -> None:
-    """Execute SQL statement inserting data
+    """
+    Execute SQL statement inserting data using PostgreSQL's COPY command.
 
     Source: https://pandas.pydata.org/docs/user_guide/io.html#io-sql-method
 
     Parameters
     ----------
     table : pandas.io.sql.SQLTable
-    conn : sqlalchemy.engine.Engine or sqlalchemy.engine.Connection
+        SQLAlchemy table object.
+    conn : Engine or Connection
+        SQLAlchemy connection or engine.
     keys : list of str
-        Column names
-    data_iter : Iterable that iterates the values to be inserted
+        Column names for the data to be inserted.
+    data_iter : Iterable
+        Iterable that yields rows of data to be inserted.
+
+    Returns
+    -------
+    None
     """
     # gets a DBAPI connection that can provide a cursor
     dbapi_conn = conn.connection
@@ -149,7 +183,21 @@ def psql_insert_copy(
 def sample_dem_with_buildings(
     dem: rasterio.io.DatasetReader, buildings: gpd.GeoDataFrame
 ) -> tuple:
-    """Sample minimum and maximum elevation values from a DEM for each building geometry"""
+    """
+    Sample minimum and maximum elevation values from a DEM for each building geometry.
+
+    Parameters
+    ----------
+    dem : rasterio.io.DatasetReader
+        DEM raster dataset.
+    buildings : gpd.GeoDataFrame
+        GeoDataFrame containing building geometries.
+
+    Returns
+    -------
+    tuple
+        Two lists containing minimum and maximum elevation values for each building.
+    """
     min_heights = []
     max_heights = []
 
@@ -176,7 +224,23 @@ def sample_polys_with_buildings(
     buildings: gpd.GeoDataFrame,
     field: str,
 ) -> gpd.GeoDataFrame:
-    """Sample a field's values from a polygon dataset for each building geometry"""
+    """
+    Sample a field's values from a polygon dataset for each building geometry.
+
+    Parameters
+    ----------
+    polygons : gpd.GeoDataFrame
+        gpd.GeoDataFrame containing polygon geometries.
+    buildings : gpd.GeoDataFrame
+        gpd.GeoDataFrame containing building geometries.
+    field : str
+        Field in the polygons GeoDataFrame to sample values from.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Updated GeoDataFrame with sampled field values.
+    """
     buildings = buildings.reset_index()
 
     # Perform a spatial join to associate land use polygons with building footprints
@@ -206,7 +270,27 @@ def sample_polys_with_buildings(
 def remove_overlapping_geoms(
     session: Session, overlap_threshold: float, bbox: tuple = None
 ) -> Result:
-    """Remove overlapping geometries within a bounding box"""
+    """
+    Remove overlapping geometries within a bounding box.
+
+    Identifies and removes smaller buildings that overlap with larger buildings by a
+    specified threshold. Optionally, restricts the operation to a specific bounding box.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    overlap_threshold : float
+        Ratio of overlap area to the smaller building's area that determines whether
+        the smaller building should be removed.
+    bbox : tuple, optional
+        Bounding box (xmin, ymin, xmax, ymax) to restrict the operation.
+
+    Returns
+    -------
+    Result
+        Database result of the delete operation.
+    """
     # Alias so we can perform self-comparison
     smaller = aliased(Building, name="smaller")
     larger = aliased(Building, name="larger")
@@ -267,7 +351,26 @@ def split_by_cadastre(
     buildings: gpd.GeoDataFrame,
     cadastre: gpd.GeoDataFrame,
 ) -> gpd.GeoDataFrame:
-    """Split geometries by cadastre boundaries"""
+    """
+    Split building geometries by cadastre boundaries.
+
+    Identifies buildings containing multiple unique address points and splits them into
+    smaller geometries based on cadastre boundaries.
+
+    Parameters
+    ----------
+    address_points : gpd.GeoDataFrame
+        GeoDataFrame containing address points.
+    buildings : gpd.GeoDataFrame
+        GeoDataFrame containing building geometries.
+    cadastre : gpd.GeoDataFrame
+        GeoDataFrame containing cadastre boundaries.
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Updated GeoDataFrame with split building geometries.
+    """
     # Spatial join to find points within buildings
     address_in_buildings = gpd.sjoin(
         address_points, buildings, how="inner", predicate="within"
@@ -303,9 +406,30 @@ def split_by_cadastre(
 
 
 def flatten_cadastre_geoms(
-    session: Session, conn: Connection, Base, temp_cadastre: Table
+    session: Session, conn: Connection, Base: DeclarativeMeta, temp_cadastre: Table
 ) -> Table:
-    """flatten cadastre geometries"""
+    """
+    Flatten cadastre geometries by polygonising overlaps.
+
+    Processes cadastre geometries to remove overlaps and create distinct polygons for
+    each overlapped area.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    conn : Connection
+        SQLAlchemy connection object.
+    Base : DeclarativeMeta
+        SQLAlchemy declarative base for ORM models.
+    temp_cadastre : Table
+        Temporary table containing cadastre geometries.
+
+    Returns
+    -------
+    Table
+        Updated table with flattened cadastre geometries.
+    """
     boundaries_subquery = (
         select(func.ST_Dump(temp_cadastre.c.geometry).geom.label("geometry"))
         .select_from(temp_cadastre)
@@ -348,7 +472,21 @@ def join_by_contains(
     select_fields: list[InstrumentedAttribute | Column],
     point_geom: InstrumentedAttribute | Column,
 ) -> Select:
-    """Join by contains helper function"""
+    """
+    Join by contains helper function.
+
+    Parameters
+    ----------
+    select_fields : list of InstrumentedAttribute or Column
+        Fields to select in the query.
+    point_geom : InstrumentedAttribute or Column
+        Geometry column of the point table.
+
+    Returns
+    -------
+    Select
+        SQLAlchemy select query.
+    """
     select_query = select(*select_fields).join(
         Building, func.ST_Contains(Building.outline, point_geom)
     )
@@ -363,7 +501,27 @@ def join_by_cadastre(
     cadastre_table: Table,
     cadastre_geom: Column,
 ) -> Select:
-    """Join by cadastre helper function"""
+    """
+    Join by cadastre helper function.
+
+    Parameters
+    ----------
+    select_fields : list of InstrumentedAttribute or Column
+        Fields to select in the query.
+    point_table : DeclarativeMeta or Table
+        Table containing point geometries.
+    point_geom : InstrumentedAttribute or Column
+        Geometry column of the point table.
+    cadastre_table : Table
+        Table containing cadastre geometries.
+    cadastre_geom : Column
+        Geometry column of the cadastre table.
+
+    Returns
+    -------
+    Select
+        SQLAlchemy select query.
+    """
     select_query = (
         select(*select_fields)
         .select_from(point_table)
@@ -393,9 +551,28 @@ def join_by_knn(
     additional_select_fields: list[InstrumentedAttribute | Column],
     knn_max_distance: int = 10,
 ) -> Select:
-    """Join by K-Nearest Neighbour helper function
+    """
+    Join by K-Nearest Neighbour helper function.
 
     Source: https://postgis.net/workshops/postgis-intro/knn.html
+
+    Parameters
+    ----------
+    lateral_fields : list of InstrumentedAttribute or Column
+        Fields to select in the lateral subquery.
+    point_table : DeclarativeMeta or Table
+        Table containing point geometries.
+    point_geom : InstrumentedAttribute or Column
+        Geometry column of the point table.
+    additional_select_fields : list of InstrumentedAttribute or Column
+        Additional fields to select in the main query.
+    knn_max_distance : int, optional
+        Maximum distance for KNN join, by default 10.
+
+    Returns
+    -------
+    Select
+        SQLAlchemy select query.
     """
     lateral_subquery = (
         select(
@@ -435,7 +612,29 @@ def build_address_match_query(
     skip_matched_buildings: bool = False,
     bbox: tuple = None,
 ) -> Select:
-    """Build address matching query"""
+    """
+    Build address matching query.
+
+    Parameters
+    ----------
+    join_by : {'intersects', 'cadastre', 'knn'}
+        Method to join address points with buildings.
+    cadastre : sqlalchemy.schema.Table, optional
+        Table containing cadastre geometries, required if join_by is 'cadastre'.
+    geocode_type : str, optional
+        Geocode type to filter address points.
+    knn_max_distance : int, optional
+        Maximum distance for KNN join, by default 10.
+    skip_matched_buildings : bool, optional
+        Whether to skip buildings that are already matched, by default False.
+    bbox : tuple, optional
+        Bounding box (xmin, ymin, xmax, ymax) to restrict the operation.
+
+    Returns
+    -------
+    Select
+        SQLAlchemy select query.
+    """
     select_fields = [
         AddressPoint.id.label("address_point_id"),
         Building.id.label("building_id"),
@@ -485,8 +684,20 @@ def build_address_match_query(
 
 
 def insert_address_building_association(session: Session, select_query: Select):
-    """Insert records into the address_point_building_association table from a select
-    query"""
+    """
+    Insert records into the address_point_building_association table from a select query.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    select_query : Select
+        SQLAlchemy select query to retrieve address point and building associations.
+
+    Returns
+    -------
+    None
+    """
     insert_query = (
         insert(address_point_building_association)
         .from_select(["address_point_id", "building_id"], select_query)
@@ -496,7 +707,21 @@ def insert_address_building_association(session: Session, select_query: Select):
 
 
 def get_or_create_method_id(session: Session, method_name: str) -> uuid.UUID:
-    """Retrieve the ID for a given method, creating it if it doesn't exist"""
+    """
+    Retrieve the ID for a given method, creating it if it doesn't exist.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    method_name : str
+        Name of the method.
+
+    Returns
+    -------
+    uuid.UUID
+        ID of the method.
+    """
     method_id = session.execute(
         select(Method.id).filter(Method.name == method_name)
     ).first()
@@ -511,7 +736,25 @@ def get_or_create_method_id(session: Session, method_name: str) -> uuid.UUID:
 def get_or_create_dataset_id(
     session: Session, dataset_name: str, dataset_desc: str, dataset_src: str
 ) -> uuid.UUID:
-    """Retrieve the ID for a given dataset, creating it if it doesn't exist"""
+    """
+    Retrieve the ID for a given dataset, creating it if it doesn't exist.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    dataset_name : str
+        Name of the dataset.
+    dataset_desc : str
+        Description of the dataset.
+    dataset_src : str
+        Source of the dataset.
+
+    Returns
+    -------
+    uuid.UUID
+        ID of the dataset.
+    """
     dataset_id = session.execute(
         select(Dataset.id).filter(Dataset.name == dataset_name)
     ).first()
@@ -526,14 +769,25 @@ def get_or_create_dataset_id(
 
 
 def build_aux_info_expression(table: Table, ignore_columns: list) -> BinaryExpression:
-    """Dynamically build json_build_object expression for the aux_info field
+    """
+    Dynamically build json_build_object expression for the aux_info field.
 
-    Input data (particularly validation data) will come from multiple sources,
-    so the number of arguments to the jsonb_build_object function will differ and
-    could exceed 100 (i.e. 50 fields).
+    Input data (particularly validation data) will come from multiple sources, so the
+    number of arguments to the jsonb_build_object function will differ and could exceed
+    100 (i.e. 50 fields). If so, the expression is separated into chunks of 100
+    arguments, which are then concatenated.
 
-    If so, the expression is separated into chunks of 100 arguments, which are
-    then concatenated with the '||' operator.
+    Parameters
+    ----------
+    table : Table
+        SQLAlchemy table object.
+    ignore_columns : list
+        List of column names to ignore.
+
+    Returns
+    -------
+    BinaryExpression
+        SQLAlchemy binary expression for json_build_object.
     """
     columns = [col for col in table.columns if col.name not in ignore_columns]
     json_args = []
@@ -573,7 +827,37 @@ def build_floor_measure_query(
     step_size: float = None,
     cadastre: Table = None,
 ) -> Select:
-    """Build a SQL select query to insert into FloorMeasure with conditional filters"""
+    """
+    Build a SQL select query to insert into FloorMeasure with conditional filters.
+
+    Parameters
+    ----------
+    floor_measure_table : Table
+        SQLAlchemy table object containing floor measure data.
+    ffh_field : str
+        Field name for floor height.
+    method_id : uuid.UUID
+        ID of the method used for floor height measurement.
+    accuracy_field : str
+        Field name for accuracy measure.
+    storey : int, optional
+        Storey number, by default None.
+    join_by : {'gnaf_id', 'intersects', 'cadastre', 'knn'}, optional
+        Method to join floor measures with buildings, by default None.
+    gnaf_id_col : str, optional
+        Column name for GNAF ID, required if join_by is 'gnaf_id'.
+    step_counting : bool, optional
+        Whether to filter floor heights by step size, by default None.
+    step_size : float, optional
+        Step size for filtering floor heights, by default None.
+    cadastre : Table, optional
+        Table containing cadastre geometries, required if join_by is 'cadastre'.
+
+    Returns
+    -------
+    Select
+        SQLAlchemy select query.
+    """
     if join_by is not None:
         building_id_field = Building.id.label("building_id")
     else:
@@ -647,8 +931,21 @@ def build_floor_measure_query(
 
 
 def insert_floor_measure(session: Session, select_query: Select) -> list:
-    """Insert records into the FloorMeasure table from a select query,
-    returning a list of the floor_measure ids that were inserted
+    """
+    Insert records into the FloorMeasure table from a select query, returning a list of
+    the floor_measure ids that were inserted.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    select_query : Select
+        SQLAlchemy select query to retrieve floor measure data.
+
+    Returns
+    -------
+    list
+        List of inserted floor measure IDs.
     """
     ids = session.execute(
         insert(FloorMeasure)
@@ -673,8 +970,22 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
 def insert_floor_measure_dataset_association(
     session: Session, dataset_id: uuid.UUID, floor_measure_inserted_ids: list
 ) -> None:
-    """Insert records into the floor_measure_dataset_association table from a Dataset
-    record id and a list of FloorMeasure ids
+    """
+    Insert records into the floor_measure_dataset_association table from a Dataset
+    record id and a list of FloorMeasure ids.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    dataset_id : uuid.UUID
+        ID of the dataset.
+    floor_measure_inserted_ids : list
+        List of inserted floor measure IDs.
+
+    Returns
+    -------
+    None
     """
     # Parse list of ids into a dict for inserting into the association table
     floor_measure_dataset_values = [
@@ -687,7 +998,21 @@ def insert_floor_measure_dataset_association(
 
 
 def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame:
-    """Get FloorMeasure IDs and image names from the aux_info field"""
+    """
+    Get FloorMeasure IDs and image names from the aux_info field.
+
+    Parameters
+    ----------
+    conn : Connection
+        SQLAlchemy connection object.
+    dataset_name : str
+        Name of the dataset.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing FloorMeasure IDs and image names.
+    """
     select_query = (
         select(
             FloorMeasure.id,
@@ -707,7 +1032,14 @@ def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame
 
 
 def build_denormalised_query() -> Select:
-    """Build denormalised query"""
+    """
+    Build denormalised query.
+
+    Returns
+    -------
+    Select
+        SQLAlchemy select query.
+    """
     select_query = (
         select(
             Building.id.label("building_id"),
@@ -735,7 +1067,14 @@ def build_denormalised_query() -> Select:
 
 
 def build_buildings_query() -> Select:
-    """Build buildings query"""
+    """
+    Build buildings query.
+
+    Returns
+    -------
+    Select
+        SQLAlchemy select query.
+    """
     select_query = (
         select(
             Building.id.label("building_id"),
@@ -760,6 +1099,26 @@ def write_ogr_file(
     normalise_aux_info=False,
     buildings_only=False,
 ):
+    """
+    Write data to an OGR file.
+
+    Parameters
+    ----------
+    output_file : str
+        Path to the output OGR file.
+    select_query : Select
+        SQLAlchemy select query to retrieve data.
+    conn : Connection
+        SQLAlchemy connection object.
+    normalise_aux_info : bool, optional
+        Whether to normalise the aux_info field, by default False.
+    buildings_only : bool, optional
+        Whether to write only building geometries, by default False.
+
+    Returns
+    -------
+    None
+    """
     gdf = gpd.read_postgis(select_query, con=conn, geom_col="outline")
 
     if buildings_only is False:

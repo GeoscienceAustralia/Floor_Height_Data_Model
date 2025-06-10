@@ -62,14 +62,12 @@ def create_dummy_building():
 
 
 @click.command()
-@click.option("-i", "--input-address", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input address points file path.")  # fmt: skip
-@click.option("-c", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
+@click.option("-i", "--input-address", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to address points file.")  # fmt: skip
+@click.option("-c", "--chunksize", type=int, default=None, help="Number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 def ingest_address_points(input_address: click.Path, chunksize: int):
     """Ingest address points
 
-    Takes an input address points file and ingests it into the data model. Optionally
-    specify the number of rows in each batch to be written at a time, may be required
-    if ingesting large datasets to avoid memory issues.
+    Takes an input address points file and ingests it into the data model.
     """
     click.secho("Ingesting address points", bold=True)
     try:
@@ -116,12 +114,12 @@ def ingest_address_points(input_address: click.Path, chunksize: int):
 
 
 @click.command()
-@click.option("-i", "--input-buildings", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input building footprint file path.")  # fmt: skip
-@click.option("-d", "--input-dem", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help="Input DEM file path, used to sample building footprint ground height.")  # fmt: skip
-@click.option("-s", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
-@click.option("--split-by-cadastre", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Split buildings by cadastre, specify input cadastre vector file path for splitting.")  # fmt: skip
-@click.option("--join-land-zoning", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Join land zoning type to buildings, specify input land zoning vector file path.")  # fmt: skip
-@click.option("--land-zoning-field", type=str, help="The land zoning dataset's field name to join to buildings.")  # fmt: skip
+@click.option("-i", "--input-buildings", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to building footprints file.")  # fmt: skip
+@click.option("-d", "--input-dem", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=False), help="Path to DEM file, used to sample building footprint ground height.")  # fmt: skip
+@click.option("-s", "--chunksize", type=int, default=None, help="Number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
+@click.option("--split-by-cadastre", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Split buildings by cadastre, specify path to cadastre vector file for splitting.")  # fmt: skip
+@click.option("--join-land-zoning", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Join land zoning type to buildings, specify path to land zoning vector file for sampling.")  # fmt: skip
+@click.option("--land-zoning-field", type=str, help="Name of the land zoning dataset's field to sample with buildings.")  # fmt: skip
 @click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
 @click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
 def ingest_buildings(
@@ -138,8 +136,6 @@ def ingest_buildings(
 
     Takes an input building footprints polygon file and ingests it into the data model.
     Requires an input DEM file to sample the building footprint ground height.
-    Optionally specify the number of rows in each batch to be written at a time, may be
-    required if ingesting large datasets to avoid memory issues.
     """
     if join_land_zoning and not land_zoning_field:
         raise click.UsageError(
@@ -275,20 +271,17 @@ def ingest_buildings(
 
 
 @click.command()
-@click.option("-c", "--input-cadastre", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input cadastre vector file path to support address joining.")  # fmt: skip
-@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
+@click.option("-c", "--input-cadastre", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to cadastre vector dataset to support address joining.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. May reduce false matches.")  # fmt: skip
 def join_address_buildings(input_cadastre: click.Path, flatten_cadastre: bool):
     """Join address points to building outlines
 
-    Requires an input cadastre vector file to support joining, and can optionally
-    flatten the cadastre geometries to reduce false matches.
+    Requires an input cadastre vector file to support joining.
 
     \b
     The join is performed in two steps:
-    1. Match for addresses geocoded to building centroids using a KNN join with a
-       maximum distance of 5m (to account for inaccuracies of building footprints).
-    2. Match for addresses geocoded to property centroids by joining to buildings
-       sharing a common parcel.
+    1. Match addresses geocoded to building centroids using a KNN join with a maximum distance of 5m (to account for inaccuracies of building footprints).
+    2. Match addresses geocoded to property centroids by joining to buildings sharing a common parcel.
     """
     click.secho("Joining addresses to buildings", bold=True)
     session = SessionLocal()
@@ -380,11 +373,11 @@ def join_address_buildings(input_cadastre: click.Path, flatten_cadastre: bool):
 
 
 @click.command()
-@click.option("-i", "--input-nexis", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input NEXIS CSV file path.")  # fmt: skip
-@click.option("--accuracy-field", type=str, required=False, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("-c", "--input-cadastre", required=False, type=click.Path(exists=True, file_okay=True, dir_okay=True), default=None, help="Input cadastre vector dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
-@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
-@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
+@click.option("-i", "--input-nexis", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to NEXIS CSV file.")  # fmt: skip
+@click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("-c", "--input-cadastre", type=click.Path(exists=True, file_okay=True, dir_okay=True), default=None, help="Path to cadastre vector dataset to support joining non-GNAF NEXIS points.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. May reduce false matches.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the parcel. May reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_measures(
     input_nexis: click.Path,
     accuracy_field: str,
@@ -394,18 +387,13 @@ def ingest_nexis_measures(
 ):
     """Ingest NEXIS floor height measures
 
-    Takes an input CSV file containing NEXIS floor measures and ingests it into the data
-    model. Optionally takes an input cadastre vector file to support joining non-GNAF
-    addresses. Can also optionally flatten the cadastre geometries and join non-GNAF
-    measures to the largest building on the parcel to reduce false matches.
-    Assumes the NEXIS points are in GDA1994 (EPSG:4823).
+    Takes a CSV file containing NEXIS floor measures and ingests it into the data model.
+    Assumes the NEXIS points are in GDA1994 (EPSG:4283).
 
     \b
     The NEXIS points are joined to buildings in two steps:
-
-    1. Match NEXIS points to buildings that share a common GNAF ID.
-    2. Match NEXIS points to buildings for Non-GNAF IDs by point-building intersection,
-       then by common cadastral parcel.
+    1. Match to buildings that share a common GNAF ID.
+    2. Match to buildings for Non-GNAF IDs by point-building intersection, then by common cadastral parcel (if provided).
     """
     if join_largest and not input_cadastre:
         raise click.UsageError(
@@ -558,17 +546,17 @@ def ingest_nexis_measures(
 
 
 @click.command()
-@click.option("-i", "--input-data", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input validation points dataset file path.")  # fmt: skip
+@click.option("-i", "--input-data", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to input validation points dataset.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
-@click.option("--accuracy-field", type=str, required=False, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--step-size", type=float, required=False, is_flag=False, flag_value=0.28, default=None, help="Step size value in metres. [default: 0.28]")  # fmt: skip
-@click.option("-c", "--input-cadastre", required=False, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input cadastre vector dataset file path to support address joining.")  # fmt: skip
-@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
-@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
-@click.option("--method-name", type=str, required=False, default="Surveyed", help="The floor measure method name.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Validation", show_default=True, help="The floor measure dataset name.")  # fmt: skip
-@click.option("--dataset-desc", type=str, help="The floor measure dataset description.")  # fmt: skip
-@click.option("--dataset-src", type=str, help="The floor measure dataset source.")  # fmt: skip
+@click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("--step-size", type=float, is_flag=False, flag_value=0.28, default=None, help="Optional step size value in metres, if used it will separate measures into 'Step counting' and 'Surveyed' methods. [default: 0.28]")  # fmt: skip
+@click.option("-c", "--input-cadastre", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to cadastre vector dataset to support joining measures to buildings.")  # fmt: skip
+@click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. May reduce false matches.")  # fmt: skip
+@click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the parcel. May reduce the number of false matches to non-dwellings.")  # fmt: skip
+@click.option("--method-name", type=str, default="Surveyed", help="Name of the floor measure method.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="Validation", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-desc", type=str, help="Description of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-src", type=str, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_validation_measures(
     input_data: click.Path,
     ffh_field: str,
@@ -582,7 +570,11 @@ def ingest_validation_measures(
     dataset_desc: str,
     dataset_src: str,
 ):
-    """Ingest validation floor height method"""
+    """Ingest validation floor height measures
+
+    Takes a points file of validation floor measures (e.g. Council provided) and ingests
+    it into the data model. Requires the field name for the first floor height.
+    """
     if join_largest and not input_cadastre:
         raise click.UsageError(
             "--join-largest-building must be used with --input-cadastre"
@@ -817,12 +809,12 @@ def ingest_validation_measures(
 
 
 @click.command()
-@click.option("-i", "--input-json", required=True, type=click.File(), help="Input main methodology floor height JSON file path.")  # fmt: skip
+@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to main methodology floor height JSON.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field in the input JSON.")  # fmt: skip
-@click.option("--method-name", default="Main Methodology", type=str, help="The floor measure method name.")  # fmt: skip
-@click.option("--dataset-name", type=str, help="The floor measure dataset name.")  # fmt: skip
-@click.option("--dataset-desc", default="Main methodology output - LIDAR", show_default=True, type=str, help="The floor measure dataset description.")  # fmt: skip
-@click.option("--dataset-src", default="FrontierSI", show_default=True, type=str, help="The floor measure dataset source.")  # fmt: skip
+@click.option("--method-name", default="Main Methodology", type=str, help="Name of the floor measure method.")  # fmt: skip
+@click.option("--dataset-name", type=str, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-desc", default="Main methodology output - LIDAR", show_default=True, type=str, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-src", default="FrontierSI", show_default=True, type=str, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_main_method_measures(
     input_json: click.File,
     ffh_field: str,
@@ -831,7 +823,11 @@ def ingest_main_method_measures(
     dataset_desc: str,
     dataset_src: str,
 ):
-    """Ingest main methodology floor height JSON"""
+    """Ingest main methodology floor height JSON
+
+    Takes a JSON file output from the Main Methodology and ingests it into the data
+    model. Requires the field name for the first floor height.
+    """
     click.secho("Ingesting Main Methodology measures", bold=True)
     try:
         click.echo("Loading Floor Height JSON...")
@@ -916,11 +912,14 @@ def ingest_main_method_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Main Methodology", help="The floor measure dataset name to attach images to.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="Main Methodology", help="Name of the floor measure dataset to attach images to.")  # fmt: skip
 def ingest_main_method_images(
     pano_path: click.Path, lidar_path: click.Path, dataset_name: str
 ):
-    """Ingest main methodology images"""
+    """Ingest main methodology images
+
+    Takes a path to Panorama and/or LIDAR images ingests them into the data model.
+    """
     if not pano_path and not lidar_path:
         raise click.UsageError(
             "Either --pano-path or --lidar-path must be provided to ingest images."
@@ -1002,11 +1001,15 @@ def ingest_main_method_images(
 
 
 @click.command()
-@click.option("-o", "--output-file", required=True, type=str, help="Output OGR dataset file path.")  # fmt: skip
+@click.option("-o", "--output-file", required=True, type=str, help="Path of output OGR dataset.")  # fmt: skip
 @click.option("--normalise-aux-info", is_flag=True, help="Normalise the aux_info field into separate columns.")  # fmt: skip
 @click.option("--buildings-only", is_flag=True, help="Export buildings only, for input to object detection processing.")  # fmt: skip
 def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: bool):
-    """Export an OGR file of the data model"""
+    """Export an OGR file of the data model
+
+    Supports GeoPackage, Shapefile and GeoJSON by specifying file extension in the
+    output file name.
+    """
     if normalise_aux_info and buildings_only:
         raise click.UsageError("Can't use --normalise-aux-info with --buildings-only")
 
