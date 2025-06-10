@@ -574,7 +574,7 @@ def build_floor_measure_query(
     cadastre: Table = None,
 ) -> Select:
     """Build a SQL select query to insert into FloorMeasure with conditional filters"""
-    if join_by:
+    if join_by is not None:
         building_id_field = Building.id.label("building_id")
     else:
         building_id_field = floor_measure_table.c.building_id.label("building_id")
