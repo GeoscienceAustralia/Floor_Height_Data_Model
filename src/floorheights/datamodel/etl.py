@@ -586,7 +586,7 @@ def build_floor_measure_query(
         floor_measure_table.c[accuracy_field].label("accuracy_measure"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
-            floor_measure_table, [ffh_field, "id", "geometry"]
+            floor_measure_table, ["id", ffh_field, accuracy_field, "geometry"]
         ).label("aux_info"),
         building_id_field,
     ]
@@ -710,6 +710,7 @@ def build_denormalised_query() -> Select:
     """Build denormalised query"""
     select_query = (
         select(
+            Building.id.label("building_id"),
             AddressPoint.gnaf_id,
             AddressPoint.address.label("gnaf_address"),
             Building.min_height_ahd.label("min_building_height_ahd"),
@@ -737,7 +738,7 @@ def build_buildings_query() -> Select:
     """Build buildings query"""
     select_query = (
         select(
-            Building.id,
+            Building.id.label("building_id"),
             AddressPoint.gnaf_id,
             AddressPoint.address.label("gnaf_address"),
             AddressPoint.geocode_type,
@@ -764,6 +765,7 @@ def write_ogr_file(
     if buildings_only is False:
         if normalise_aux_info is True:
             gdf = pd.concat([gdf, pd.json_normalize(gdf.pop("aux_info"))], axis=1)
+            gdf = gdf.loc[:, ~gdf.columns.duplicated()]  # Drop duplicate columns
         else:
             # Convert dict rows to JSON strings
             gdf.aux_info = gdf.aux_info.apply(json.dumps)

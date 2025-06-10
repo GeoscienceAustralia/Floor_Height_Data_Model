@@ -1007,6 +1007,9 @@ def ingest_main_method_images(
 @click.option("--buildings-only", is_flag=True, help="Export buildings only, for input to object detection processing.")  # fmt: skip
 def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: bool):
     """Export an OGR file of the data model"""
+    if normalise_aux_info and buildings_only:
+        raise click.UsageError("Can't use --normalise-aux-info with --buildings-only")
+
     click.secho("Exporting OGR file", bold=True)
     if buildings_only:
         select_query = etl.build_buildings_query()
