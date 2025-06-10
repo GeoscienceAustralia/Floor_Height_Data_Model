@@ -104,7 +104,7 @@ class FloorMeasure(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     storey = Column(Integer, nullable=False)
     height = Column(Float, nullable=False)
-    accuracy_measure = Column(Float, nullable=False)
+    accuracy_measure = Column(Float, nullable=True)
     aux_info = Column(JSON, nullable=True)
 
     # Foreign key to Building

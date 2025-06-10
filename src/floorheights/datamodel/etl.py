@@ -565,8 +565,8 @@ def build_floor_measure_query(
     floor_measure_table: Table,
     ffh_field: str,
     method_id: uuid.UUID,
-    storey: int,
-    accuracy_measure: float = None,
+    accuracy_field: str,
+    storey: int = None,
     join_by: Literal["gnaf_id", "intersects", "cadastre", "knn"] = None,
     gnaf_id_col: str = None,
     step_counting: bool = None,
@@ -578,16 +578,12 @@ def build_floor_measure_query(
         building_id_field = Building.id.label("building_id")
     else:
         building_id_field = floor_measure_table.c.building_id.label("building_id")
-    if accuracy_measure is not None:
-        accuracy_measure_field = literal(accuracy_measure)
-    else:
-        accuracy_measure_field = floor_measure_table.c.accuracy_measure
 
     select_fields = [
         floor_measure_table.c.id.label("id"),
         literal(storey).label("storey"),
         floor_measure_table.c[ffh_field].label("height"),
-        accuracy_measure_field.label("accuracy_measure"),
+        floor_measure_table.c[accuracy_field].label("accuracy_measure"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
             floor_measure_table, [ffh_field, "id", "geometry"]

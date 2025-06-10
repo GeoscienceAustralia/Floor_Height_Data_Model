@@ -116,7 +116,7 @@ def ingest_address_points(input_address: str, chunksize: int):
 
 
 @click.command()
-@click.option("-i", "--input-buildings", required=True, type=str, help="Input building footprint file path.")  # fmt: skip
+@click.option("-i", "--input-buildings", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input building footprint file path.")  # fmt: skip
 @click.option("-d", "--input-dem", required=True, type=click.File(), help="Input DEM file path, used to sample building footprint ground height.")  # fmt: skip
 @click.option("-s", "--chunksize", type=int, default=None, help="Specify the number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
 @click.option("--split-by-cadastre", type=str, help="Split buildings by cadastre, specify input cadastre vector file path for splitting.")  # fmt: skip
@@ -125,7 +125,7 @@ def ingest_address_points(input_address: str, chunksize: int):
 @click.option("--remove-small", type=float, is_flag=False, flag_value=30, default=None, help="Remove smaller buildings, optionally specify an area threshold in square metres.  [default: 30.0]")  # fmt: skip
 @click.option("--remove-overlapping", type=float, is_flag=True, flag_value=0.80, default=None, help="Remove overlapping buildings, optionally specify an intersection ratio threshold.  [default: 0.80]")  # fmt: skip
 def ingest_buildings(
-    input_buildings: str,
+    input_buildings: click.Path,
     input_dem: click.File,
     chunksize: int,
     split_by_cadastre: str,
@@ -275,9 +275,9 @@ def ingest_buildings(
 
 
 @click.command()
-@click.option("-c", "--input-cadastre", required=True, type=str, help="Input cadastre vector file path to support address joining.")  # fmt: skip
+@click.option("-c", "--input-cadastre", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Input cadastre vector file path to support address joining.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
-def join_address_buildings(input_cadastre: str, flatten_cadastre: bool):
+def join_address_buildings(input_cadastre: click.Path, flatten_cadastre: bool):
     """Join address points to building outlines
 
     Requires an input cadastre vector file to support joining, and can optionally
@@ -380,13 +380,12 @@ def join_address_buildings(input_cadastre: str, flatten_cadastre: bool):
 
 
 @click.command()
-@click.option("-i", "--input-nexis", required=True, type=str, help="Input NEXIS CSV file path.")  # fmt: skip
-@click.option("-c", "--input-cadastre", required=False, type=str, default=None, help="Input cadastre OGR dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
+@click.option("--accuracy-field", type=str, required=False, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("-c", "--input-cadastre", required=False, type=click.Path(exists=True, file_okay=True, dir_okay=True), default=None, help="Input cadastre vector dataset file path to support joining non-GNAF NEXIS points.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_measures(
-    input_nexis: str,
-    input_cadastre: bool,
+    accuracy_field: str,
     flatten_cadastre: bool,
     join_largest: bool,
 ):
@@ -419,6 +418,15 @@ def ingest_nexis_measures(
     except Exception as error:
         raise click.exceptions.FileError(input_nexis, error)
 
+    if accuracy_field is not None and accuracy_field not in nexis_gdf.columns:
+        raise click.exceptions.BadParameter(
+            f"Field '{accuracy_field}' not found in input NEXIS file"
+        )
+    if accuracy_field is not None:
+        nexis_gdf = nexis_gdf.rename(columns={accuracy_field: "accuracy_measure"})
+    else:
+        nexis_gdf["accuracy_measure"] = None
+
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
@@ -447,7 +455,7 @@ def ingest_nexis_measures(
             schema="public",
             if_exists="replace",
             index=True,
-            dtype={"id": UUID, "floor_height_m": Numeric},
+            dtype={"id": UUID, "floor_height_m": Numeric, "accuracy_measure": Numeric},
         )
         temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=conn)
 
@@ -457,7 +465,7 @@ def ingest_nexis_measures(
             temp_nexis,
             "floor_height_m",
             method_id,
-            accuracy_measure=50,
+            "accuracy_measure",
             storey=0,
             join_by="gnaf_id",
             gnaf_id_col="lid",
@@ -473,7 +481,7 @@ def ingest_nexis_measures(
             temp_nexis,
             "floor_height_m",
             method_id,
-            accuracy_measure=50,
+            "accuracy_measure",
             storey=0,
             join_by="intersects",
         ).where(
@@ -509,7 +517,7 @@ def ingest_nexis_measures(
                 temp_nexis,
                 "floor_height_m",
                 method_id,
-                accuracy_measure=50,
+                "accuracy_measure",
                 storey=0,
                 join_by="cadastre",
                 cadastre=temp_cadastre,
@@ -549,20 +557,24 @@ def ingest_nexis_measures(
 @click.command()
 @click.option("-i", "--input-data", required=True, type=str, help="Input validation points dataset file path.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
+@click.option("--accuracy-field", type=str, required=False, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
 @click.option("--step-size", type=float, required=False, is_flag=False, flag_value=0.28, default=None, help="Step size value in metres. [default: 0.28]")  # fmt: skip
 @click.option("-c", "--input-cadastre", required=False, type=str, help="Input cadastre vector dataset file path to support address joining.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. This can help reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measures to the largest building on the parcel. This can help reduce the number of false matches to non-dwellings.")  # fmt: skip
+@click.option("--method-name", type=str, required=False, default="Surveyed", help="The floor measure method name.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="Validation", show_default=True, help="The floor measure dataset name.")  # fmt: skip
 @click.option("--dataset-desc", type=str, help="The floor measure dataset description.")  # fmt: skip
 @click.option("--dataset-src", type=str, help="The floor measure dataset source.")  # fmt: skip
 def ingest_validation_measures(
     input_data: str,
     ffh_field: str,
+    accuracy_field: str,
     step_size: float,
     input_cadastre: str,
     flatten_cadastre: bool,
     join_largest: bool,
+    method_name: str,
     dataset_name: str,
     dataset_desc: str,
     dataset_src: str,
@@ -587,8 +599,20 @@ def ingest_validation_measures(
             f"Field '{ffh_field}' not found in input validation points file"
         )
 
+    if accuracy_field is not None and accuracy_field not in method_gdf.columns:
+        raise click.exceptions.BadParameter(
+            f"Field '{accuracy_field}' not found in input NEXIS file"
+        )
+    if accuracy_field is not None:
+        method_gdf = method_gdf.rename(columns={accuracy_field: "accuracy_measure"})
+    else:
+        method_gdf["accuracy_measure"] = None
+
     method_gdf = method_gdf.rename(columns={ffh_field: "floor_height_m"})
-    # Make method input column names lower case and remove special characters
+    if accuracy_field is not None:
+        method_gdf = method_gdf.rename(columns={accuracy_field: "accuracy_measure"})
+    else:
+        method_gdf["accuracy_measure"] = None
     method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True
     )
@@ -606,7 +630,7 @@ def ingest_validation_measures(
             schema="public",
             if_exists="replace",
             index=True,
-            dtype={"id": UUID, "floor_height_m": Numeric},
+            dtype={"id": UUID, "floor_height_m": Numeric, "accuracy_measure": Numeric},
         )
         temp_method = Table("temp_method", Base.metadata, autoload_with=conn)
 
@@ -633,21 +657,18 @@ def ingest_validation_measures(
                 session, conn, Base, temp_cadastre
             )
 
-        survey_id = etl.get_or_create_method_id(session, "Surveyed")
-        step_count_id = (
-            etl.get_or_create_method_id(session, "Step counting") if step_size else None
-        )
-
-        # If no step size is provided, we assume all the measures are surveyed
+        # If no step size is provided, we ingest all measures as a single method
         if step_size is None:
+            method_id = etl.get_or_create_method_id(session, method_name)
+
             click.echo("Inserting validation measures into floor_measure table...")
             # First, join by point-building intersection
             click.echo("Joining by intersection...")
             survey_intersects_query = etl.build_floor_measure_query(
                 temp_method,
                 "floor_height_m",
-                survey_id,
-                accuracy_measure=90,
+                method_id,
+                "accuracy_measure",
                 storey=0,
                 join_by="intersects",
                 step_counting=False,
@@ -665,8 +686,8 @@ def ingest_validation_measures(
                 survey_cadastre_query = etl.build_floor_measure_query(
                     temp_method,
                     "floor_height_m",
-                    survey_id,
-                    accuracy_measure=90,
+                    method_id,
+                    "accuracy_measure",
                     storey=0,
                     join_by="cadastre",
                     step_counting=False,
@@ -692,13 +713,20 @@ def ingest_validation_measures(
             click.echo(
                 "Inserting surveyed & step counted measures into floor_measure table..."
             )
+
+            survey_id = etl.get_or_create_method_id(session, "Surveyed")
+            step_count_id = (
+                etl.get_or_create_method_id(session, "Step counting")
+                if step_size
+                else None
+            )
             # Join by point-building intersection
             click.echo("Joining by intersection...")
             step_count_intersects_query = etl.build_floor_measure_query(
                 temp_method,
                 "floor_height_m",
                 step_count_id,
-                accuracy_measure=60,
+                "accuracy_measure",
                 storey=0,
                 join_by="intersects",
                 step_counting=True,
@@ -711,7 +739,7 @@ def ingest_validation_measures(
                 temp_method,
                 "floor_height_m",
                 survey_id,
-                accuracy_measure=90,
+                "accuracy_measure",
                 storey=0,
                 join_by="intersects",
                 step_counting=False,
@@ -729,7 +757,7 @@ def ingest_validation_measures(
                     temp_method,
                     "floor_height_m",
                     step_count_id,
-                    accuracy_measure=60,
+                    "accuracy_measure",
                     storey=0,
                     join_by="cadastre",
                     step_counting=True,
@@ -740,7 +768,7 @@ def ingest_validation_measures(
                     temp_method,
                     "floor_height_m",
                     survey_id,
-                    accuracy_measure=90,
+                    "accuracy_measure",
                     storey=0,
                     join_by="cadastre",
                     step_counting=False,
