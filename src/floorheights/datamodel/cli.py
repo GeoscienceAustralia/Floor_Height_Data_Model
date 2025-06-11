@@ -818,6 +818,8 @@ def ingest_main_method_measures(
         columns={
             "id": "building_id",
             ffh_field: "height",
+            "latitude": "easting",
+            "longitude": "northing",
         }
     )
 
@@ -833,13 +835,17 @@ def ingest_main_method_measures(
         r"\W+", "", regex=True
     )
 
-    # Create UUID index
-    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
-    method_df = method_df.set_index(["id"])
-
     # Create aux_info json column
     aux_info_df = method_df.drop(
-        columns=["building_id", "height", "storey", "accuracy_measure"], axis=1
+        columns=[
+            "building_id",
+            "height",
+            "storey",
+            "accuracy_measure",
+            "easting",
+            "northing",
+        ],
+        axis=1,
     ).copy()
     aux_info_df = aux_info_df.replace(np.nan, None)
     method_df["aux_info"] = aux_info_df.apply(
@@ -851,6 +857,42 @@ def ingest_main_method_measures(
     with session.begin():
         conn = session.connection()
         click.echo("Inserting records into floor_measure table...")
+
+        # Get building centroids from the database, we need to join these to derive the
+        # Map Grid of Australia (MGA) Zone for easting and northing coordinates
+        buildings = gpd.read_postgis(
+            select(Building),
+            conn,
+            geom_col="outline",
+        )
+        if buildings.empty:
+            raise click.UsageError(
+                "The ingest-main-method-measures command can only be used after "
+                "ingesting buildings."
+            )
+        buildings["centroid"] = buildings.outline.centroid
+        buildings = buildings.set_geometry("centroid")
+
+        # Join building centroids to method dataframe
+        method_df = method_df.merge(
+            buildings[["id", "centroid"]],
+            left_on="building_id",
+            right_on="id",
+            how="left",
+        )
+
+        # Convert the grid coordinates to geographic coordinates
+        method_df = gpd.GeoDataFrame(method_df, geometry="centroid", crs=7844)
+        method_df = etl.grid_to_geo(method_df)
+
+        # Create UUID index
+        method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
+        method_df = method_df.set_index(["id"])
+
+        method_df = method_df.drop(
+            columns=["centroid", "easting", "northing", "mga_zone"],
+        )
+        method_df = method_df.rename_geometry("location")
 
         method_id = etl.get_or_create_method_id(session, method_name)
         method_dataset_id = etl.get_or_create_dataset_id(
