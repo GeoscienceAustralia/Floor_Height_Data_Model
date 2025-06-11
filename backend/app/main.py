@@ -15,14 +15,15 @@ import sqlalchemy
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from geojson_pydantic import FeatureCollection, Feature
-from sqlalchemy import select, any_
+from geojson_pydantic import Feature, FeatureCollection
+from sqlalchemy import any_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import func
 from starlette.background import BackgroundTask
 from starlette.requests import Request
 
 from app.log import LogConfig
+
 dictConfig(LogConfig().dict())
 logger = logging.getLogger("floorheights")
 
@@ -70,19 +71,18 @@ security = HTTPBasic()
 app = FastAPI(
     title="Floor Heights API",
     description=description,
-    version='0.0.1',
+    version="0.0.1",
     dependencies=[Depends(security)],
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
 def authenticated(credentials: HTTPBasicCredentials = Depends(security)):
-    username = os.environ['APP_USERNAME']
-    password = os.environ['APP_PASSWORD']
+    username = os.environ["APP_USERNAME"]
+    password = os.environ["APP_PASSWORD"]
 
-    if (
-        (username is None or len(username) == 0) and 
-        (password is None or len(password) == 0)
+    if (username is None or len(username) == 0) and (
+        password is None or len(password) == 0
     ):
         # no auth if username and password have not been set
         return True
@@ -149,12 +149,12 @@ def get_building_geom(
 
 @app.get(
     "/api/address-point-to-building/{address_point_id}/geom/",
-    response_model=FeatureCollection
+    response_model=FeatureCollection,
 )
 def read_source_ids(
     address_point_id: str,
     db: sqlalchemy.orm.Session = Depends(get_db),
-    Authentication = Depends(authenticated)
+    Authentication=Depends(authenticated),
 ):
     if Authentication:
         pass
@@ -167,7 +167,7 @@ def read_source_ids(
             geoalchemy2.functions.ST_AsGeoJSON(
                 geoalchemy2.functions.ST_MakeLine(
                     AddressPoint.location,
-                    geoalchemy2.functions.ST_Centroid(Building.outline)
+                    geoalchemy2.functions.ST_Centroid(Building.outline),
                 )
             ),
         )
@@ -196,7 +196,7 @@ def read_source_ids(
 def get_floor_height_data(
     building_id: str,
     db: sqlalchemy.orm.Session = Depends(get_db),
-    Authentication = Depends(authenticated)
+    Authentication=Depends(authenticated),
 ):
     if Authentication:
         pass
@@ -217,7 +217,7 @@ def get_floor_height_data(
             accuracy_measure=fm_db.accuracy_measure,
             aux_info=fm_db.aux_info,
             method=fm_db.method.name,
-            datasets=datasets
+            datasets=datasets,
         )
         floor_measures.append(floor_measure)
 
@@ -229,16 +229,12 @@ def get_floor_height_data(
     response_model=list[str],
 )
 def list_methods(
-    db: sqlalchemy.orm.Session = Depends(get_db),
-    Authentication = Depends(authenticated)
+    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
 ):
     # return a simple list of all methods sorted alphabetically
     if Authentication:
         pass
-    return [
-        r[0] 
-        for r in db.query(Method.name).order_by(Method.name)
-    ]
+    return [r[0] for r in db.query(Method.name).order_by(Method.name)]
 
 
 @app.get(
@@ -250,20 +246,20 @@ def get_legend_graduated_values(
     dataset_filter: str | None = "",
     bbox: str | None = "",
     db: sqlalchemy.orm.Session = Depends(get_db),
-    Authentication = Depends(authenticated)
+    Authentication=Depends(authenticated),
 ):
     if Authentication:
         pass
 
     # Parse query parameters into sorted lists
     if method_filter:
-        method_filter_list = [x.strip() for x in method_filter.split(',')]
+        method_filter_list = [x.strip() for x in method_filter.split(",")]
         method_filter_list.sort()
     if dataset_filter:
-        dataset_filter_list = [x.strip() for x in dataset_filter.split(',')]
+        dataset_filter_list = [x.strip() for x in dataset_filter.split(",")]
         dataset_filter_list.sort()
     if bbox:
-        bbox_list = [x.strip() for x in bbox.split(',')]
+        bbox_list = [x.strip() for x in bbox.split(",")]
 
     subquery = (
         db.query(
@@ -276,7 +272,12 @@ def get_legend_graduated_values(
         .filter(
             (method_filter == "" or Method.name.like(any_(method_filter_list))),
             (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
-            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 4326), Building.outline)),
+            (
+                bbox == ""
+                or func.ST_Contains(
+                    func.ST_MakeEnvelope(*bbox_list, 7844), Building.outline
+                )
+            ),
         )
         .group_by(Building.id)
     ).subquery()
@@ -299,7 +300,7 @@ def get_legend_categorised_values(
     dataset_filter: str | None = "",
     bbox: str | None = "",
     db: sqlalchemy.orm.Session = Depends(get_db),
-    Authentication = Depends(authenticated)
+    Authentication=Depends(authenticated),
 ):
     if Authentication:
         pass
@@ -313,18 +314,16 @@ def get_legend_categorised_values(
 
     # Parse query parameters into sorted lists
     if method_filter:
-        method_filter_list = [x.strip() for x in method_filter.split(',')]
+        method_filter_list = [x.strip() for x in method_filter.split(",")]
         method_filter_list.sort()
     if dataset_filter:
-        dataset_filter_list = [x.strip() for x in dataset_filter.split(',')]
+        dataset_filter_list = [x.strip() for x in dataset_filter.split(",")]
         dataset_filter_list.sort()
     if bbox:
-        bbox_list = [x.strip() for x in bbox.split(',')]
+        bbox_list = [x.strip() for x in bbox.split(",")]
 
     query = (
-        db.query(
-            func.string_agg(func.distinct(field), ', ').label("values")
-        )
+        db.query(func.string_agg(func.distinct(field), ", ").label("values"))
         .select_from(Building)
         .join(FloorMeasure)
         .join(Method, FloorMeasure.method)
@@ -333,7 +332,12 @@ def get_legend_categorised_values(
         .filter(
             (method_filter == "" or Method.name.like(any_(method_filter_list))),
             (dataset_filter == "" or Dataset.name.in_(dataset_filter_list)),
-            (bbox == "" or func.ST_Contains(func.ST_MakeEnvelope(*bbox_list, 4326), Building.outline)),
+            (
+                bbox == ""
+                or func.ST_Contains(
+                    func.ST_MakeEnvelope(*bbox_list, 7844), Building.outline
+                )
+            ),
         )
         .group_by(Building.id)
     )
@@ -343,9 +347,9 @@ def get_legend_categorised_values(
     sorted_result_list = sorted(
         result_list,
         key=lambda x: (
-            len(x.split(", ")) != 1, # Single items first
-            x.lower() # Then alphabetically
-        )
+            len(x.split(", ")) != 1,  # Single items first
+            x.lower(),  # Then alphabetically
+        ),
     )
 
     return sorted_result_list
@@ -356,15 +360,12 @@ def get_legend_categorised_values(
     response_model=list[str],
 )
 def list_datasets(
-    db: sqlalchemy.orm.Session = Depends(get_db),
-    Authentication = Depends(authenticated)
+    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
 ):
     if Authentication:
         pass
-    return [
-        r[0] 
-        for r in db.query(Dataset.name).order_by(Dataset.name)
-    ]
+    return [r[0] for r in db.query(Dataset.name).order_by(Dataset.name)]
+
 
 def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
     try:
@@ -479,8 +480,7 @@ def get_pano_image(
 
 @app.get("/api/geojson/", response_class=StreamingResponse)
 def export_geojson(
-    db: sqlalchemy.orm.Session = Depends(get_db),
-    Authentication=Depends(authenticated)
+    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
 ):
     if Authentication:
         pass
@@ -516,10 +516,10 @@ MAPS_SERVER = httpx.AsyncClient(base_url=MAPS_HOST)
 
 @app.get("/api/maps/{path:path}", response_class=StreamingResponse)
 async def map_proxy(
-        request: Request,
-        path: str,
-        Authentication = Depends(authenticated),
-    ):
+    request: Request,
+    path: str,
+    Authentication=Depends(authenticated),
+):
     """
     Proxy for the map service
     """
@@ -534,7 +534,10 @@ async def map_proxy(
         target_url = f"{target_url}?{query_string}"
 
     rp_req = MAPS_SERVER.build_request(
-        request.method, target_url, headers=request.headers.raw, content=await request.body()
+        request.method,
+        target_url,
+        headers=request.headers.raw,
+        content=await request.body(),
     )
     rp_resp = await MAPS_SERVER.send(rp_req, stream=True)
     return StreamingResponse(

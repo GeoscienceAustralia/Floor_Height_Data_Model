@@ -1,9 +1,10 @@
 Table address_point {
 	id uuid [ pk, not null, unique ]
 	location point [ not null ]
-	gnaf_id text [ not null ]
-	address text [ not null ]
-	geocode_type text
+	gnaf_id varchar [ not null ]
+	address varchar [ not null ]
+	geocode_type varchar
+	primary_secondary varchar
 }
 
 Table building {
@@ -15,20 +16,24 @@ Table building {
 }
 
 Table address_point_building_association {
-	address_point_id uuid [ pk, not null, unique ]
+	address_point_id uuid [ pk, not null ]
 	building_id uuid [ pk, not null ]
+
+	indexes {
+		(address_point_id, building_id) [ name: 'address_point_building_association_index_0' ]
+	}
 }
 
 Table dataset {
 	id uuid [ pk, not null, unique ]
-	name text [ not null ]
-	description text
-	source text
+	name varchar [ not null ]
+	description varchar
+	source varchar
 }
 
 Table method {
 	id uuid [ pk, not null, unique ]
-	name text [ not null ]
+	name varchar [ not null ]
 }
 
 Table floor_measure {
@@ -37,14 +42,18 @@ Table floor_measure {
 	building_id uuid [ not null ]
 	method_id uuid [ not null ]
 	dataset_group_id uuid [ not null ]
-	accuracy_measure decimal [ not null ]
+	accuracy_measure decimal
 	aux_info json
 	height decimal [ not null ]
 }
 
 Table floor_measure_dataset_association {
-	floor_measure_id uuid [ pk, not null, unique ]
+	floor_measure_id uuid [ pk, not null ]
 	dataset_id uuid [ pk, not null ]
+
+	indexes {
+		(floor_measure_id, dataset_id) [ name: 'floor_measure_dataset_association_index_1' ]
+	}
 }
 
 Table floor_measure_image {
@@ -55,27 +64,27 @@ Table floor_measure_image {
 	floor_measure_id uuid [ not null ]
 }
 
-Ref address_point_id_fk {
+Ref fk_address_point_id_address_point_building_association {
 	address_point.id < address_point_building_association.address_point_id [ delete: no action, update: no action ]
 }
 
-Ref building_id_fk {
+Ref fk_building_id_address_point_building_association {
 	building.id < address_point_building_association.building_id [ delete: no action, update: no action ]
 }
 
-Ref floor_measure_building_id_fk {
+Ref fk_floor_measure_building_id_building {
 	floor_measure.building_id > building.id [ delete: no action, update: no action ]
 }
 
-Ref method_id_fk {
+Ref fk_method_id_floor_measure {
 	method.id < floor_measure.method_id [ delete: no action, update: no action ]
 }
 
-Ref dataset_group_dataset_id_fk {
+Ref fk_floor_measure_dataset_association_dataset_id_dataset {
 	floor_measure_dataset_association.dataset_id > dataset.id [ delete: no action, update: no action ]
 }
 
-Ref floor_measure_dataset_association_floor_measure_id_fk {
+Ref fk_floor_measure_dataset_association_floor_measure_id_floor_measure {
 	floor_measure_dataset_association.floor_measure_id > floor_measure.dataset_group_id [ delete: no action, update: no action ]
 }
 

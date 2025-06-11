@@ -10,32 +10,38 @@ from dotenv import load_dotenv, find_dotenv
 # This is done to support local (non-docker) development environments
 load_dotenv(find_dotenv())
 
+
 def create_database_url() -> URL:
     """General a DB url that will connect to the postgres container
     using env vars. Will raise a runtime error if one of the required
     environment variables is not found.
     """
-    username = os.getenv('POSTGRES_USER')
+    username = os.getenv("POSTGRES_USER")
     if username is None:
         raise RuntimeError("Missing username (env var POSTGRES_USER)")
 
-    password = os.getenv('POSTGRES_PASSWORD')
+    password = os.getenv("POSTGRES_PASSWORD")
     if password is None:
         raise RuntimeError("Missing password (env var POSTGRES_PASSWORD)")
 
-    database = os.getenv('POSTGRES_DB')
+    database = os.getenv("POSTGRES_DB")
     if database is None:
         raise RuntimeError("Missing database name (env var POSTGRES_DB)")
 
-    host = os.getenv('POSTGRES_HOST')
+    host = os.getenv("POSTGRES_HOST")
     if host is None:
-        raise RuntimeError("Missing database name (env var POSTGRES_HOST)")
+        raise RuntimeError("Missing database host (env var POSTGRES_HOST)")
+
+    port = os.getenv("POSTGRES_PORT")
+    if port is None:
+        port = 5432
 
     url_object = URL.create(
         "postgresql+psycopg2",
         username=username,
         password=password,
         host=host,
+        port=port,
         database=database,
     )
     return url_object

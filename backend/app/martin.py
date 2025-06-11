@@ -37,7 +37,7 @@ BEGIN
       LEFT JOIN method AS m on m.id = fm.method_id
       LEFT JOIN floor_measure_dataset_association AS fmda ON fmda.floor_measure_id = fm.id
       LEFT JOIN dataset as d ON d.id = fmda.dataset_id
-    WHERE outline && ST_Transform(ST_TileEnvelope(z, x, y), 4326)
+    WHERE outline && ST_Transform(ST_TileEnvelope(z, x, y), 7844)
       -- Optional query parameters
       AND (
         NOT jsonb_exists(query_params, 'method_filter') 
@@ -54,7 +54,7 @@ BEGIN
             (string_to_array(query_params->>'bbox', ','))[2]::float,
             (string_to_array(query_params->>'bbox', ','))[3]::float,
             (string_to_array(query_params->>'bbox', ','))[4]::float,
-            4326)
+            7844)
       )
     GROUP BY building.id
   ) as tile WHERE geom IS NOT NULL;
@@ -63,6 +63,7 @@ BEGIN
 END
 $$ LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE;
 """
+
 
 def setup_building_layer_fn(db: sqlalchemy.orm.Session):
     logger.info("Setting up building layer SQL function")
