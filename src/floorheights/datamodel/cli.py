@@ -820,6 +820,7 @@ def ingest_main_method_measures(
     )
 
     method_df = method_df[~method_df["height"].isna()]
+    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
     method_df["storey"] = 0
 
     # Cast building_id strings to UUIDs
@@ -933,6 +934,7 @@ def ingest_gap_fill_measures(
     )
 
     method_df = method_df[~method_df["height"].isna()]
+    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
     method_df["storey"] = 0
 
     # Cast building_id strings to UUIDs
