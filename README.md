@@ -75,13 +75,11 @@ The CLI tool supports the ingestion and export of data to/from the data model. I
     --help  Show this message and exit.
 
     Commands:
-    create-dummy-address-point   Create dummy address point
-    create-dummy-building        Create a dummy building
     ingest-address-points        Ingest address points
-    join-address-buildings       Join address points to building outlines
     ingest-buildings             Ingest building footprints
+    join-address-buildings       Join address points to building outlines
     ingest-nexis-measures        Ingest NEXIS floor height measures
-    ingest-validation-measures   Ingest validation floor height method
+    ingest-validation-measures   Ingest validation floor height measures
     ingest-main-method-images    Ingest main methodology images
     ingest-main-method-measures  Ingest main methodology floor height JSON
     export-ogr-file              Export an OGR file of the data model
