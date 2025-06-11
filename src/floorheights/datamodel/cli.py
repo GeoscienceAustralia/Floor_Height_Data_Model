@@ -403,6 +403,7 @@ def ingest_nexis_measures(
 
         nexis_gdf["id"] = [uuid.uuid4() for _ in range(len(nexis_gdf.index))]
         nexis_gdf = nexis_gdf.set_index(["id"])
+        nexis_gdf = nexis_gdf.rename_geometry("location")
 
         click.echo("Copying NEXIS points to PostgreSQL...")
         nexis_gdf.to_postgis(
@@ -569,6 +570,7 @@ def ingest_validation_measures(
         method_gdf["accuracy_measure"] = None
 
     method_gdf = method_gdf.rename(columns={ffh_field: "floor_height_m"})
+    method_gdf = method_gdf.rename_geometry("location")
     method_gdf = method_gdf.dropna(subset=["floor_height_m"])
     method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True

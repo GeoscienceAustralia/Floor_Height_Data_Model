@@ -871,6 +871,7 @@ def build_floor_measure_query(
             floor_measure_table, ["id", ffh_field, accuracy_field, "geometry"]
         ).label("aux_info"),
         building_id_field,
+        floor_measure_table.c.location,
     ]
 
     if join_by == "gnaf_id":
@@ -885,12 +886,12 @@ def build_floor_measure_query(
             )
         )
     elif join_by == "intersects":
-        select_query = join_by_contains(select_fields, floor_measure_table.c.geometry)
+        select_query = join_by_contains(select_fields, floor_measure_table.c.location)
     elif join_by == "cadastre":
         select_query = join_by_cadastre(
             select_fields,
             floor_measure_table,
-            floor_measure_table.c.geometry,
+            floor_measure_table.c.location,
             cadastre,
             cadastre.c.geometry,
         ).where(
@@ -908,7 +909,7 @@ def build_floor_measure_query(
         select_query = join_by_knn(
             lateral_fields,
             floor_measure_table,
-            floor_measure_table.c.geometry,
+            floor_measure_table.c.location,
             additional_select_fields=select_fields,
         )
     else:
@@ -956,6 +957,7 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
                 "method_id",
                 "aux_info",
                 "building_id",
+                "location",
             ],
             select_query,
         )
