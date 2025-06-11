@@ -391,8 +391,6 @@ def split_by_cadastre(
         buildings_to_split, cadastre, how="intersection", keep_geom_type=False
     )
 
-    split_buildings.to_file("split_buildings.gpkg")
-
     # Update the original GeoDataFrame
     buildings.loc[buildings_to_split.index, "geometry"] = None
     buildings = gpd.GeoDataFrame(
