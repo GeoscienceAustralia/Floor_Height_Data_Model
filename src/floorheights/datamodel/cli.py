@@ -870,7 +870,7 @@ def ingest_main_method_measures(
                 "The ingest-main-method-measures command can only be used after "
                 "ingesting buildings."
             )
-        buildings["centroid"] = buildings.outline.centroid
+        buildings["centroid"] = buildings.outline.representative_point()
         buildings = buildings.set_geometry("centroid")
 
         # Join building centroids to method dataframe
