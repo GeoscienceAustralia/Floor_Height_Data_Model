@@ -2,12 +2,14 @@ import json
 import uuid
 from pathlib import Path
 
+import boto3
 import click
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import psycopg2
 import rasterio
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from shapely.geometry import box
 from sqlalchemy import JSON, UUID, LargeBinary, Numeric, String, Table, select
 from sqlalchemy.orm import declarative_base
