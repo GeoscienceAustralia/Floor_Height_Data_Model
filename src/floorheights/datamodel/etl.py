@@ -1024,7 +1024,6 @@ def get_measure_image_names(conn: Connection) -> pd.DataFrame:
             Building.id.label("building_id"),
         )
         .select_from(FloorMeasure)
-        .join(Building)
         .join(Method)
         .filter(
             Method.name.in_(
