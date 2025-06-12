@@ -1149,7 +1149,7 @@ def download_images_s3(
     areas: list,
     output_dir: click.Path,
 ):
-    """Download images from S3
+    """Download main methodology images from S3
 
     Downloads images from an S3 bucket based on the provided JSON file and saves them to
     a local directory.
