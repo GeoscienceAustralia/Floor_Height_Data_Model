@@ -29,7 +29,7 @@ defineProps({
     </div>
     <div v-if="floorMeasure?.accuracy_measure" class="flex flex-col gap-0">
       <div class="subheading"> Accuracy: </div>
-      <div> {{ floorMeasure?.accuracy_measure }} </div>
+      <div> {{ floorMeasure?.accuracy_measure.toFixed(3) }} </div>
     </div>
     <Divider v-if="!isLast" />
   </div>
