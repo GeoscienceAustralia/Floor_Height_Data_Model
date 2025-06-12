@@ -1142,11 +1142,13 @@ def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: 
 @click.option("-i", "--input-json", required=True, type=click.File(), help="Path to FFH model output JSON.")  # fmt: skip
 @click.option("--s3-uri", required=True, type=str, help="Root S3 URI path containing the images.")  # fmt: skip
 @click.option("--areas", type=click.Choice(["Wagga", "Tweed", "Launceston"], case_sensitive=False), default=["Wagga", "Tweed", "Launceston"], multiple=True, help="The areas to download associated images, option can be used multiple times to download multiple areas.")  # fmt: skip
-@click.option("-o", "--output-dir", required=True, type=click.Path(file_okay=False, dir_okay=True, writable=True), help="Local directory to save downloaded images.")  # fmt: skip
+@click.option("--type", type=click.Choice(["pano", "lidar"], case_sensitive=False), default=["pano", "lidar"], multiple=True, help="The types of images to download, option can be used multiple times to download multiple types.")  # fmt: skip
+@click.option("-o", "--output-dir", required=True, type=click.Path(file_okay=False, dir_okay=True, writable=True), help="Local directory to save downloaded images, images will be download into sub directories for each image type.")  # fmt: skip
 def download_images_s3(
     input_json: click.File,
     s3_uri: str,
     areas: list,
+    type: list,
     output_dir: click.Path,
 ):
     """Download main methodology images from S3
@@ -1171,44 +1173,74 @@ def download_images_s3(
 
     json_df = json_df[json_df.region.isin(areas)]
 
-    json_df["image_prefixes"] = (
-        json_df.region.astype(str)
-        + "/"
-        + "clips"
-        + "/"
-        + json_df.building_id.astype(str)
-        + "_"
-        + json_df.gnaf_id.astype(str)
-        + "/"
-        + json_df.best_view_pano_filename.astype(str).apply(lambda x: Path(x).stem)
-    )
-
     s3 = boto3.client("s3")
     bucket_name, prefix = s3_uri.strip("/").replace("s3://", "").split("/", 1)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with click.progressbar(json_df["image_prefixes"], label="Downloading") as bar:
-        for image_prefix in bar:
-            s3_key_prefix = f"{prefix}/{image_prefix}"
-            try:
-                response = s3.list_objects_v2(Bucket=bucket_name, Prefix=s3_key_prefix)
-                if "Contents" in response:
-                    for obj in response["Contents"]:
-                        s3_key = obj["Key"]
-                        local_file_path = output_dir / Path(s3_key).name
-                        s3.download_file(bucket_name, s3_key, str(local_file_path))
-                else:
-                    click.echo(
-                        f"Warning: No images found for prefix {s3_key_prefix}", err=True
+    for image_type in type:
+        folder = "clips" if image_type == "pano" else "3d_point_clouds"
+        type_output_dir = output_dir / (f"{image_type}_images")
+        type_output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create image prefixes for panorama images
+        if image_type == "pano":
+            json_df["image_prefixes"] = (
+                json_df.region.astype(str)
+                + "/"
+                + folder
+                + "/"
+                + json_df.building_id.astype(str)
+                + "_"
+                + json_df.gnaf_id.astype(str)
+                + "/"
+                + json_df.best_view_pano_filename.astype(str).apply(
+                    lambda x: Path(x).stem
+                )
+            )
+        # Create image prefixes for lidar images
+        elif image_type == "lidar":
+            json_df["image_prefixes"] = (
+                json_df.region.astype(str)
+                + "/"
+                + folder
+                + "/"
+                + json_df.building_id.astype(str)
+                + "_"
+                + json_df.gnaf_id.astype(str)
+                + "/"
+                + json_df.building_id.astype(str)
+                + "_"
+                + json_df.gnaf_id.astype(str)
+                + "_3d_point_cloud.jpg"
+            )
+
+        with click.progressbar(
+            json_df["image_prefixes"], label=f"Downloading {image_type} images"
+        ) as bar:
+            for image_prefix in bar:
+                s3_key_prefix = f"{prefix}/{image_prefix}"
+                try:
+                    response = s3.list_objects_v2(
+                        Bucket=bucket_name, Prefix=s3_key_prefix
                     )
-            except NoCredentialsError:
-                raise click.UsageError("AWS credentials not found.")
-            except PartialCredentialsError:
-                raise click.UsageError("Incomplete AWS credentials configuration.")
-            except Exception as error:
-                click.echo(f"Failed to download {s3_key_prefix}: {error}", err=True)
+                    if "Contents" in response:
+                        for obj in response["Contents"]:
+                            s3_key = obj["Key"]
+                            local_file_path = type_output_dir / Path(s3_key).name
+                            s3.download_file(bucket_name, s3_key, str(local_file_path))
+                    else:
+                        click.echo(
+                            f"Warning: No images found for prefix {s3_key_prefix}",
+                            err=True,
+                        )
+                except NoCredentialsError:
+                    raise click.UsageError("AWS credentials not found.")
+                except PartialCredentialsError:
+                    raise click.UsageError("Incomplete AWS credentials configuration.")
+                except Exception as error:
+                    click.echo(f"Failed to download {s3_key_prefix}: {error}", err=True)
 
     click.echo("Image download complete")
 
