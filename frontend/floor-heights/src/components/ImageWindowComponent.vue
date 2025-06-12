@@ -160,7 +160,7 @@ watch(() => props.building?.id, (newId) => {
 #image {
   width: 100%;
   height: 250px;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 #image.expanded {
