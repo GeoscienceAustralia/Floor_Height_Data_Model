@@ -1141,10 +1141,12 @@ def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: 
 @click.command()
 @click.option("-i", "--input-json", required=True, type=click.File(), help="Path to FFH model output JSON.")  # fmt: skip
 @click.option("--s3-uri", required=True, type=str, help="Root S3 URI path containing the images.")  # fmt: skip
+@click.option("--areas", type=click.Choice(["Wagga", "Tweed", "Launceston"], case_sensitive=False), default=["Wagga", "Tweed", "Launceston"], multiple=True, help="The areas to download associated images, option can be used multiple times to download multiple areas.")  # fmt: skip
 @click.option("-o", "--output-dir", required=True, type=click.Path(file_okay=False, dir_okay=True, writable=True), help="Local directory to save downloaded images.")  # fmt: skip
 def download_images_s3(
     input_json: click.File,
     s3_uri: str,
+    areas: list,
     output_dir: click.Path,
 ):
     """Download images from S3
@@ -1166,6 +1168,8 @@ def download_images_s3(
 
     json_df = json_df[~json_df["floor_height_consensus"].isna()]
     json_df = json_df.drop_duplicates(subset=["building_id", "floor_height_consensus"])
+
+    json_df = json_df[json_df.region.isin(areas)]
 
     json_df["image_prefixes"] = (
         json_df.region.astype(str)
