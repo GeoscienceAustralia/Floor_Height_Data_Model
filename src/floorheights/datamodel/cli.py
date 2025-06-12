@@ -777,9 +777,9 @@ def ingest_validation_measures(
 @click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing main methodology measures.")  # fmt: skip
 @click.option("--ffh-field", type=str, default="floor_height_consensus", help="Name of the first floor height field in the input JSON.")  # fmt: skip
 @click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Object Detection Estimation", help="Name of the floor measure method.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Main Methodology", help="Name of the floor measure dataset.")  # fmt: skip
-@click.option("--dataset-desc", type=str, default="Main methodology output from the processing pipeline", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--method-name",  type=str, default="Main Method", help="Name of the floor measure method.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_main_method_measures(
     input_json: click.File,
@@ -891,9 +891,9 @@ def ingest_main_method_measures(
 @click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing gap fill measures.")  # fmt: skip
 @click.option("--ffh-field", type=str, default="gap_fill_ffh", help="Name of the first floor height field in the input JSON.")  # fmt: skip
 @click.option("--accuracy-field", type=str, default="gap_fill_confidence_score", help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Regression", help="Name of the floor measure method.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Gap Fill", help="Name of the floor measure dataset.")  # fmt: skip
-@click.option("--dataset-desc", type=str, default="Gap Fill output from the processing pipeline", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--method-name",  type=str, default="Gap Fill", help="Name of the floor measure method.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_gap_fill_measures(
     input_json: click.File,
