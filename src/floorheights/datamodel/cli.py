@@ -1004,9 +1004,9 @@ def ingest_gap_fill_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Main Methodology", help="Name of the floor measure dataset to attach images to.")  # fmt: skip
+@click.option("--method-name", type=str, default="Main Method", help="Name of the floor measure method to attach images to.")  # fmt: skip
 def ingest_main_method_images(
-    pano_path: click.Path, lidar_path: click.Path, dataset_name: str
+    pano_path: click.Path, lidar_path: click.Path, method_name: str
 ):
     """Ingest main methodology images
 
@@ -1028,7 +1028,8 @@ def ingest_main_method_images(
         conn = session.connection()
         click.echo("Selecting records from floor_measure table...")
 
-        measure_df = etl.get_measure_image_names(conn, dataset_name)
+        # Get the image names for the specified method
+        measure_df = etl.get_measure_image_names(conn, method_name)
 
         if measure_df.empty:
             raise click.UsageError(

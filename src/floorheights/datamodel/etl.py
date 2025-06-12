@@ -995,7 +995,7 @@ def insert_floor_measure_dataset_association(
     )
 
 
-def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame:
+def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
     """
     Get FloorMeasure IDs and image names from the aux_info field.
 
@@ -1003,8 +1003,8 @@ def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame
     ----------
     conn : Connection
         SQLAlchemy connection object.
-    dataset_name : str
-        Name of the dataset.
+    method_name : str
+        Name of the method to get image names from.
 
     Returns
     -------
@@ -1017,8 +1017,8 @@ def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame
             FloorMeasure.aux_info,
         )
         .select_from(FloorMeasure)
-        .join(Dataset, FloorMeasure.datasets)
-        .filter(Dataset.name == dataset_name)
+        .join(Method)
+        .filter(Method.name == method_name)
     )
     measure_df = pd.read_sql(select_query, conn)
     measure_df = pd.concat(
