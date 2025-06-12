@@ -1040,10 +1040,12 @@ def ingest_main_method_images(
             if image_path:
                 click.echo(f"Ingesting {image_type} images...")
                 # Associate Method IDs with image paths
-                image_df = measure_df[["frame_filename"]].copy()
+                image_df = measure_df[["best_view_pano_filename"]].copy()
+
+                image_df = image_df[~image_df["best_view_pano_filename"].isna()]
 
                 # Get image filenames by globbing the image_path
-                image_df["image_path"] = image_df.frame_filename.apply(
+                image_df["image_path"] = image_df.best_view_pano_filename.apply(
                     lambda filename: list(
                         Path(image_path).glob(f"{Path(filename).stem}*")
                     )
@@ -1067,8 +1069,10 @@ def ingest_main_method_images(
 
                 # Join the floor_measure_ids
                 image_df = image_df.join(
-                    measure_df[["id", "frame_filename"]].set_index("frame_filename"),
-                    on="frame_filename",
+                    measure_df[["id", "best_view_pano_filename"]].set_index(
+                        "best_view_pano_filename"
+                    ),
+                    on="best_view_pano_filename",
                 )
                 image_df = image_df.rename(columns={"id": "floor_measure_id"})
 
@@ -1078,7 +1082,7 @@ def ingest_main_method_images(
                 )
 
                 image_df = image_df.drop(
-                    columns=["frame_filename", "image_path"], axis=1
+                    columns=["best_view_pano_filename", "image_path"], axis=1
                 )
 
                 image_df.to_sql(

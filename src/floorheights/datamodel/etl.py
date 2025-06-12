@@ -1024,7 +1024,7 @@ def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame
     measure_df = pd.concat(
         [measure_df, pd.json_normalize(measure_df.pop("aux_info"))], axis=1
     )
-    measure_df = measure_df.drop_duplicates(subset=["frame_filename"])
+    measure_df = measure_df.drop_duplicates(subset=["best_view_pano_filename"])
 
     return measure_df
 
