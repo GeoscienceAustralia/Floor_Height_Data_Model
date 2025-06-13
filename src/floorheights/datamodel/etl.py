@@ -1,41 +1,43 @@
 import csv
-import geopandas as gpd
 import json
+import uuid
+from collections.abc import Iterable
+from io import StringIO
+from pathlib import Path
+from typing import Literal
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-import uuid
-from collections.abc import Iterable
-from geoalchemy2 import Geometry, Geography
-from io import StringIO
+from geoalchemy2 import Geography, Geometry
 from pyproj import CRS
 from rasterio.mask import mask
 from sqlalchemy import (
-    Table,
-    Column,
-    Result,
-    Integer,
-    Select,
     BinaryExpression,
-    select,
+    Column,
+    Integer,
+    Result,
+    Select,
+    Table,
     delete,
-    not_,
     exists,
-    text,
-    literal,
     func,
+    literal,
+    not_,
+    select,
+    text,
 )
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.orm import Session, InstrumentedAttribute, DeclarativeMeta, aliased
-from typing import Literal
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.orm import DeclarativeMeta, InstrumentedAttribute, Session, aliased
 
 from floorheights.datamodel.models import (
     AddressPoint,
     Building,
+    Dataset,
     FloorMeasure,
     Method,
-    Dataset,
     address_point_building_association,
     floor_measure_dataset_association,
 )
@@ -1015,8 +1017,10 @@ def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
         select(
             FloorMeasure.id,
             FloorMeasure.aux_info,
+            Building.id.label("building_id"),
         )
         .select_from(FloorMeasure)
+        .join(Building)
         .join(Method)
         .filter(Method.name == method_name)
     )
@@ -1025,6 +1029,17 @@ def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
         [measure_df, pd.json_normalize(measure_df.pop("aux_info"))], axis=1
     )
     measure_df = measure_df.drop_duplicates(subset=["best_view_pano_filename"])
+
+    measure_df["pano_filename"] = measure_df.best_view_pano_filename.astype(str).apply(
+        lambda x: Path(x).stem
+    )
+
+    measure_df["lidar_filename"] = (
+        measure_df.building_id.astype(str)
+        + "_"
+        + measure_df.gnaf_id.astype(str)
+        + "_3d_point_cloud"
+    )
 
     return measure_df
 
