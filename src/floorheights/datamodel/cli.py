@@ -418,7 +418,7 @@ def ingest_nexis_measures(
         temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=conn)
 
         # Build select query to insert into the floor_measure table for GNAF ID matches
-        method_id = etl.get_or_create_method_id(session, "Inverse transform sampling")
+        method_id = etl.get_or_create_method_id(session, "Random Sampling")
         modelled_query_gnaf = etl.build_floor_measure_query(
             temp_nexis,
             "floor_height_m",
