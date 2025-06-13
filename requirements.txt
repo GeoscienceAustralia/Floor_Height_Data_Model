@@ -1,4 +1,5 @@
 alembic==1.13.3
+boto3==1.38.35
 click==8.1.7
 GeoAlchemy2==0.15.2
 geopandas==1.0.1

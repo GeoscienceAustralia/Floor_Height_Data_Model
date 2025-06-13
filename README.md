@@ -80,9 +80,13 @@ The CLI tool supports the ingestion and export of data to/from the data model. I
     join-address-buildings       Join address points to building outlines
     ingest-nexis-measures        Ingest NEXIS floor height measures
     ingest-validation-measures   Ingest validation floor height measures
-    ingest-main-method-images    Ingest main methodology images
+    download-images-s3           Download main methodology images from S3
     ingest-main-method-measures  Ingest main methodology floor height JSON
+    ingest-gap-fill-measures     Ingest gap fill measures from floor height JSON
+    ingest-main-method-images    Ingest main methodology images
     export-ogr-file              Export an OGR file of the data model
+
+Specific help for each command can be shown with the `--help` option. For example, `fh-cli ingest-address-points --help`.
 
 An example of a complete ingestion for the Wagga Wagga area of interest is provided in [`./src/examples/data_ingestion_example.ipynb`](./src/examples/data_ingestion_example.ipynb).
 

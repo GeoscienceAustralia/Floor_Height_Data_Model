@@ -16,7 +16,8 @@ const toast = useToast();
 
 const isExpanded = ref(false);
 const isClosed = ref(false);
-const images = ref<{ itemImageSrc: string }[]>([]);
+const panoImages = ref<{ itemImageSrc: string }[]>([]);
+const lidarImages = ref<{ itemImageSrc: string }[]>([]);
 
 const props = defineProps<{
   building: Building | null;
@@ -35,22 +36,28 @@ const closeWindow = () => {
   emit('closeImageWindow', isClosed.value);
 };
 
-const fetchImages = async (buildingId: string) => {
+const fetchImages = async (buildingId: string, type: string) => {
   try {
     // Fetch the list of image IDs
-    const idsResponse = await axios.get(`api/pano-image-ids/${buildingId}`);
+    const idsResponse = await axios.get(`api/image-ids/${buildingId}?type=${type}`);
     const imageIds: string[] = idsResponse.data;
 
     // Fetch each image and store its blob URL
     const imagePromises = imageIds.map(async (imageId) => {
-      const response = await axios.get(`api/pano-image/${imageId}`, {
+      const response = await axios.get(`api/image/${imageId}`, {
         responseType: 'arraybuffer',
       });
       const blob = new Blob([response.data], { type: 'image/jpeg' });
       return { itemImageSrc: URL.createObjectURL(blob) };
     });
 
-    images.value = await Promise.all(imagePromises);
+    const images = await Promise.all(imagePromises);
+
+    if (type === "panorama") {
+      panoImages.value = images;
+    } else if (type === "lidar") {
+      lidarImages.value = images;
+    }
   } catch (error) {
     console.error(`Failed to fetch images for building ID ${buildingId}`, error);
     toast.add({
@@ -65,7 +72,8 @@ const fetchImages = async (buildingId: string) => {
 // Fetch the images when the component is mounted or when the building prop changes
 watch(() => props.building?.id, (newId) => {
   if (newId) {
-    fetchImages(newId);
+    fetchImages(newId, "panorama");
+    fetchImages(newId, "lidar");
   }
 }, { immediate: true });
 </script>
@@ -89,8 +97,8 @@ watch(() => props.building?.id, (newId) => {
           </TabList>
           <TabPanels style="padding: 0px;">
             <TabPanel value="0">
-              <div v-if="images.length > 0 && props.building != null">
-                <Galleria :value="images" :showItemNavigators="true" :showThumbnails="false" style="max-width: 640px">
+              <div v-if="panoImages.length > 0 && props.building != null">
+                <Galleria :value="panoImages" :showItemNavigators="true" :showThumbnails="false" style="max-width: 640px">
                   <template #item="{ item }">
                     <img id="image" :src="item.itemImageSrc" alt="Panorama Image" :class="{ expanded: isExpanded }" />
                   </template>
@@ -107,8 +115,19 @@ watch(() => props.building?.id, (newId) => {
               </div>
             </TabPanel>
             <TabPanel value="1">
-              <!-- Placeholder until LIDAR images are created -->
-              <div id="image-placeholder" class="flex flex-col gap-2" :class="{ expanded: isExpanded }">
+              <div v-if="lidarImages.length > 0 && props.building != null">
+                <Galleria :value="lidarImages" :showItemNavigators="true" :showThumbnails="false" style="max-width: 640px">
+                  <template #item="{ item }">
+                    <img id="image" :src="item.itemImageSrc" alt="Panorama Image" :class="{ expanded: isExpanded }" />
+                  </template>
+                </Galleria>
+              </div>
+              <div id="image-placeholder" v-else-if="props.building == null" class="flex flex-col gap-2"
+                :class="{ expanded: isExpanded }">
+                <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
+                <div class="opacity-50">Select a building to show LIDAR images.</div>
+              </div>
+              <div id="image-placeholder" v-else class="flex flex-col gap-2" :class="{ expanded: isExpanded }">
                 <i class="pi pi-info-circle opacity-25" style="font-size: 2rem"></i>
                 <div class="opacity-50">No LIDAR images found for this building.</div>
               </div>
@@ -160,7 +179,7 @@ watch(() => props.building?.id, (newId) => {
 #image {
   width: 100%;
   height: 250px;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 #image.expanded {

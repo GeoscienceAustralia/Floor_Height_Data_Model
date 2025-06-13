@@ -422,11 +422,12 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
 
 
 @app.get(
-    "/api/pano-image-ids/{building_id}",
+    "/api/image-ids/{building_id}",
     response_model=list[uuid.UUID],
 )
 def get_pano_image_ids(
     building_id: str,
+    type: str,
     db: sqlalchemy.orm.Session = Depends(get_db),
     Authentication=Depends(authenticated),
 ):
@@ -434,12 +435,19 @@ def get_pano_image_ids(
         pass
     uuid_id = uuid.UUID(building_id)
 
+    if type not in ["panorama", "lidar"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid type parameter. Must be 'panorama' or 'lidar'.",
+        )
+
     query = (
         select(FloorMeasureImage.id)
         .select_from(FloorMeasureImage)
         .join(FloorMeasure)
         .join(Building)
         .filter(Building.id == uuid_id)
+        .filter(FloorMeasureImage.type == type)
     )
 
     results = db.execute(query).all()
@@ -448,10 +456,10 @@ def get_pano_image_ids(
 
 
 @app.get(
-    "/api/pano-image/{image_id}",
+    "/api/image/{image_id}",
     response_class=StreamingResponse,
 )
-def get_pano_image(
+def get_image(
     image_id: str,
     db: sqlalchemy.orm.Session = Depends(get_db),
     Authentication=Depends(authenticated),
@@ -460,11 +468,7 @@ def get_pano_image(
         pass
     uuid_id = uuid.UUID(image_id)
 
-    query = (
-        select(FloorMeasureImage.image_data)
-        .filter(FloorMeasureImage.id == uuid_id)
-        .filter(FloorMeasureImage.type == "panorama")
-    )
+    query = select(FloorMeasureImage.image_data).filter(FloorMeasureImage.id == uuid_id)
     result = db.execute(query).fetchone()
 
     if result is None:
