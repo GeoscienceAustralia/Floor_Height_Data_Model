@@ -455,6 +455,94 @@ def get_pano_image_ids(
     return [r[0] for r in results]
 
 
+def __color_for_class(class_name: str) -> str:
+    """
+    Returns a color for the given class name
+    """
+    class_colors = {
+        "Window": "blue",
+        "Front Door": "green",
+        "Garage Door": "orange",
+        "Foundation": "pink"
+    }
+    # default to red if class not found
+    return class_colors.get(class_name, "red")
+
+
+def draw_object_detection_boxes(
+    image_data: bytes, aux_info: dict | None = None
+) -> bytes:
+    """
+    Draws bounding boxes on the image based on the aux_info.
+    """
+    if aux_info is None:
+        return image_data
+
+    try:
+        image = Image.open(BytesIO(image_data))
+        draw = ImageDraw.Draw(image)
+
+        for obj in aux_info.get("object_detections", []):
+            box = obj.get("bbox_xyxy")
+            class_name = obj.get("class")
+            class_color = __color_for_class(class_name)
+            confidence = obj.get("confidence")
+            confidence = f"{confidence:.2f}"
+            # draw detection bbox
+            if box:
+                x1, y1, x2, y2 = box
+                draw.rectangle(
+                    [x1, y1, x2, y2],
+                    outline=class_color,
+                    width=4
+                )
+
+            # following three vars should be enough to tweak the font size, and the boxes
+            # drawn behind for readbility
+            line_padding = 4
+            padding = 6
+            font_size = 20
+            class_name_length_px = draw.textlength(class_name, font_size=font_size)
+            confidence_length_px = draw.textlength(confidence, font_size=font_size)
+            # draw some filled boxes that will be behind the text for readability
+            draw.rectangle(
+                [
+                    x1,
+                    y1,
+                    x1 + 2 * padding + class_name_length_px,
+                    y1 + 2 * padding + font_size
+                ],
+                fill=class_color
+            )
+            draw.rectangle(
+                [
+                    x1,
+                    y1 + 2 * padding + font_size,
+                    x1 + 2 * padding + confidence_length_px,
+                    y1 + 3 * padding + 2 * font_size],
+                fill=class_color
+            )
+            draw.text(
+                (x1 + padding, y1 + padding ),
+                f"{class_name}",
+                fill="white",
+                font_size=font_size
+            )
+            draw.text(
+                (x1 + padding, y1 + padding + line_padding + font_size),
+                confidence,
+                fill="white",
+                font_size=font_size
+            )
+        output_buffer = BytesIO()
+        image.save(output_buffer, format="JPEG")
+        return output_buffer.getvalue()
+    except Exception as e:
+        # if any part of the drawing fails, log the error and return the original image
+        logger.error(f"Error drawing bounding boxes: {e}")
+        return image_data
+
+
 @app.get(
     "/api/image/{image_id}",
     response_class=StreamingResponse,
@@ -484,6 +572,9 @@ def get_image(
         raise HTTPException(status_code=404, detail="Image not found.")
 
     image_data = result[0]
+
+    if result[1] == "panorama":
+        image_data = draw_object_detection_boxes(image_data, result[2])
 
     return StreamingResponse(
         BytesIO(image_data),
