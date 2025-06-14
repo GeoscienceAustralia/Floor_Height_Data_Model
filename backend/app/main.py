@@ -468,7 +468,16 @@ def get_image(
         pass
     uuid_id = uuid.UUID(image_id)
 
-    query = select(FloorMeasureImage.image_data).filter(FloorMeasureImage.id == uuid_id)
+    query = (
+        select(
+            FloorMeasureImage.image_data,
+            FloorMeasureImage.type,
+            FloorMeasure.aux_info
+        )
+        .select_from(FloorMeasureImage)
+        .join(FloorMeasure)
+        .filter(FloorMeasureImage.id == uuid_id)
+    )
     result = db.execute(query).fetchone()
 
     if result is None:
