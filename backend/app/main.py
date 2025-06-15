@@ -464,7 +464,7 @@ def __color_for_class(class_name: str) -> str:
         "Window": "blue",
         "Front Door": "green",
         "Garage Door": "orange",
-        "Foundation": "pink"
+        "Foundation": "pink",
     }
     # default to red if class not found
     return class_colors.get(class_name, "red")
@@ -492,11 +492,7 @@ def draw_object_detection_boxes(
             # draw detection bbox
             if box:
                 x1, y1, x2, y2 = box
-                draw.rectangle(
-                    [x1, y1, x2, y2],
-                    outline=class_color,
-                    width=4
-                )
+                draw.rectangle([x1, y1, x2, y2], outline=class_color, width=4)
 
             # following three vars should be enough to tweak the font size, and the boxes
             # drawn behind for readbility
@@ -511,29 +507,30 @@ def draw_object_detection_boxes(
                     x1,
                     y1,
                     x1 + 2 * padding + class_name_length_px,
-                    y1 + 2 * padding + font_size
+                    y1 + 2 * padding + font_size,
                 ],
-                fill=class_color
+                fill=class_color,
             )
             draw.rectangle(
                 [
                     x1,
                     y1 + 2 * padding + font_size,
                     x1 + 2 * padding + confidence_length_px,
-                    y1 + 3 * padding + 2 * font_size],
-                fill=class_color
+                    y1 + 3 * padding + 2 * font_size,
+                ],
+                fill=class_color,
             )
             draw.text(
-                (x1 + padding, y1 + padding ),
+                (x1 + padding, y1 + padding),
                 f"{class_name}",
                 fill="white",
-                font_size=font_size
+                font_size=font_size,
             )
             draw.text(
                 (x1 + padding, y1 + padding + line_padding + font_size),
                 confidence,
                 fill="white",
-                font_size=font_size
+                font_size=font_size,
             )
         output_buffer = BytesIO()
         image.save(output_buffer, format="JPEG")
@@ -559,9 +556,7 @@ def get_image(
 
     query = (
         select(
-            FloorMeasureImage.image_data,
-            FloorMeasureImage.type,
-            FloorMeasure.aux_info
+            FloorMeasureImage.image_data, FloorMeasureImage.type, FloorMeasure.aux_info
         )
         .select_from(FloorMeasureImage)
         .join(FloorMeasure)
