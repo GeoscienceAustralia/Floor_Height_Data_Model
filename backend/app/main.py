@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from geojson_pydantic import Feature, FeatureCollection
+from PIL import Image, ImageDraw
 from sqlalchemy import any_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql import func
