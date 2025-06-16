@@ -756,7 +756,11 @@ def get_or_create_dataset_id(
         ID of the dataset.
     """
     dataset_id = session.execute(
-        select(Dataset.id).filter(Dataset.name == dataset_name)
+        select(Dataset.id).filter(
+            Dataset.name == dataset_name,
+            Dataset.description == dataset_desc,
+            Dataset.source == dataset_src,
+        )
     ).first()
     if not dataset_id:
         dataset = Dataset(

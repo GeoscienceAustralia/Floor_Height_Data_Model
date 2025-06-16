@@ -234,7 +234,7 @@ def list_methods(
     # return a simple list of all methods sorted alphabetically
     if Authentication:
         pass
-    return [r[0] for r in db.query(Method.name).order_by(Method.name)]
+    return [r[0] for r in db.query(Method.name).distinct().order_by(Method.name)]
 
 
 @app.get(
@@ -364,7 +364,7 @@ def list_datasets(
 ):
     if Authentication:
         pass
-    return [r[0] for r in db.query(Dataset.name).order_by(Dataset.name)]
+    return [r[0] for r in db.query(Dataset.name).distinct().order_by(Dataset.name)]
 
 
 def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
