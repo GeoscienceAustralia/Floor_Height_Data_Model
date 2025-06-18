@@ -999,9 +999,7 @@ def ingest_gap_fill_measures(
                 conn,
                 schema="public",
                 if_exists="append",
-                index=True,
                 dtype={
-                    "id": UUID,
                     "building_id": UUID,
                     "method_id": UUID,
                     "height": Numeric,
@@ -1110,9 +1108,7 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                     conn,
                     schema="public",
                     if_exists="append",
-                    index=True,
                     dtype={
-                        "id": UUID,
                         "image_data": LargeBinary,
                         "floor_measure_id": UUID,
                         "type": String,
