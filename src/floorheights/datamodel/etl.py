@@ -1073,11 +1073,11 @@ def build_denormalised_query() -> Select:
             Building.land_use_zone,
             Building.outline,
         )
-        .select_from(FloorMeasure)
-        .join(Method, FloorMeasure.method)
-        .join(Dataset, FloorMeasure.datasets)
-        .join(Building)
-        .join(AddressPoint, Building.address_points)
+        .select_from(Building)
+        .outerjoin(FloorMeasure)
+        .outerjoin(Method, FloorMeasure.method)
+        .outerjoin(Dataset, FloorMeasure.datasets)
+        .outerjoin(AddressPoint, Building.address_points)
     )
 
     return select_query
