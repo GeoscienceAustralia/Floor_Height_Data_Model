@@ -1015,7 +1015,9 @@ def ingest_gap_fill_measures(
                 conn,
                 schema="public",
                 if_exists="append",
+                index=True,
                 dtype={
+                    "id": UUID,
                     "building_id": UUID,
                     "method_id": UUID,
                     "height": Numeric,
