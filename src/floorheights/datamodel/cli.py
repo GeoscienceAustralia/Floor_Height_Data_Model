@@ -357,13 +357,13 @@ def join_address_buildings(input_cadastre: click.Path, flatten_cadastre: bool):
 
 @click.command()
 @click.option("-i", "--input-nexis", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to NEXIS CSV file.")  # fmt: skip
-@click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("--confidence-field", type=str, default=None, help="Name of the first floor height confidence field.")  # fmt: skip
 @click.option("-c", "--input-cadastre", type=click.Path(exists=True, file_okay=True, dir_okay=True), default=None, help="Path to cadastre vector dataset to support joining non-GNAF NEXIS points.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. May reduce false matches.")  # fmt: skip
 @click.option("--join-largest-building", "join_largest", is_flag=True, help="Join measure points to the largest building on the parcel. May reduce the number of false matches to non-dwellings.")  # fmt: skip
 def ingest_nexis_measures(
     input_nexis: click.Path,
-    accuracy_field: str,
+    confidence_field: str,
     input_cadastre: click.Path,
     flatten_cadastre: bool,
     join_largest: bool,
@@ -392,14 +392,14 @@ def ingest_nexis_measures(
     except Exception as error:
         raise click.exceptions.FileError(input_nexis, error)
 
-    if accuracy_field is not None and accuracy_field not in nexis_gdf.columns:
+    if confidence_field is not None and confidence_field not in nexis_gdf.columns:
         raise click.exceptions.BadParameter(
-            f"Field '{accuracy_field}' not found in input NEXIS file"
+            f"Field '{confidence_field}' not found in input NEXIS file"
         )
-    if accuracy_field is not None:
-        nexis_gdf = nexis_gdf.rename(columns={accuracy_field: "accuracy_measure"})
+    if confidence_field is not None:
+        nexis_gdf = nexis_gdf.rename(columns={confidence_field: "confidence"})
     else:
-        nexis_gdf["accuracy_measure"] = None
+        nexis_gdf["confidence"] = None
 
     session = SessionLocal()
     with session.begin():
@@ -430,7 +430,7 @@ def ingest_nexis_measures(
             schema="public",
             if_exists="replace",
             index=True,
-            dtype={"id": UUID, "floor_height_m": Numeric, "accuracy_measure": Numeric},
+            dtype={"id": UUID, "floor_height_m": Numeric, "confidence": Numeric},
         )
         temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=conn)
 
@@ -440,7 +440,7 @@ def ingest_nexis_measures(
             temp_nexis,
             "floor_height_m",
             method_id,
-            "accuracy_measure",
+            "confidence",
             storey=0,
             join_by="gnaf_id",
             gnaf_id_col="lid",
@@ -456,7 +456,7 @@ def ingest_nexis_measures(
             temp_nexis,
             "floor_height_m",
             method_id,
-            "accuracy_measure",
+            "confidence",
             storey=0,
             join_by="intersects",
         ).where(
@@ -492,7 +492,7 @@ def ingest_nexis_measures(
                 temp_nexis,
                 "floor_height_m",
                 method_id,
-                "accuracy_measure",
+                "confidence",
                 storey=0,
                 join_by="cadastre",
                 cadastre=temp_cadastre,
@@ -532,7 +532,7 @@ def ingest_nexis_measures(
 @click.command()
 @click.option("-i", "--input-data", required=True, type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to input validation points dataset.")  # fmt: skip
 @click.option("--ffh-field", type=str, required=True, help="Name of the first floor height field.")  # fmt: skip
-@click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("--confidence-field", type=str, default=None, help="Name of the first floor height confidence field.")  # fmt: skip
 @click.option("--step-size", type=float, is_flag=False, flag_value=0.28, default=None, help="Optional step size value in metres, if used it will separate measures into 'Step counting' and 'Surveyed' methods. [default: 0.28]")  # fmt: skip
 @click.option("-c", "--input-cadastre", type=click.Path(exists=True, file_okay=True, dir_okay=True), help="Path to cadastre vector dataset to support joining measures to buildings.")  # fmt: skip
 @click.option("--flatten-cadastre", is_flag=True, help="Flatten cadastre by polygonising overlaps into one geometry per overlapped area. May reduce false matches.")  # fmt: skip
@@ -544,7 +544,7 @@ def ingest_nexis_measures(
 def ingest_validation_measures(
     input_data: click.Path,
     ffh_field: str,
-    accuracy_field: str,
+    confidence_field: str,
     step_size: float,
     input_cadastre: click.Path,
     flatten_cadastre: bool,
@@ -578,14 +578,14 @@ def ingest_validation_measures(
             f"Field '{ffh_field}' not found in input validation points file"
         )
 
-    if accuracy_field is not None and accuracy_field not in method_gdf.columns:
+    if confidence_field is not None and confidence_field not in method_gdf.columns:
         raise click.exceptions.BadParameter(
-            f"Field '{accuracy_field}' not found in input NEXIS file"
+            f"Field '{confidence_field}' not found in input NEXIS file"
         )
-    if accuracy_field is not None:
-        method_gdf = method_gdf.rename(columns={accuracy_field: "accuracy_measure"})
+    if confidence_field is not None:
+        method_gdf = method_gdf.rename(columns={confidence_field: "confidence"})
     else:
-        method_gdf["accuracy_measure"] = None
+        method_gdf["confidence"] = None
 
     method_gdf = method_gdf.rename(columns={ffh_field: "floor_height_m"})
     method_gdf = method_gdf.rename_geometry("location")
@@ -607,7 +607,7 @@ def ingest_validation_measures(
             schema="public",
             if_exists="replace",
             index=True,
-            dtype={"id": UUID, "floor_height_m": Numeric, "accuracy_measure": Numeric},
+            dtype={"id": UUID, "floor_height_m": Numeric, "confidence": Numeric},
         )
         temp_method = Table("temp_method", Base.metadata, autoload_with=conn)
 
@@ -645,7 +645,7 @@ def ingest_validation_measures(
                 temp_method,
                 "floor_height_m",
                 method_id,
-                "accuracy_measure",
+                "confidence",
                 storey=0,
                 join_by="intersects",
                 step_counting=False,
@@ -664,7 +664,7 @@ def ingest_validation_measures(
                     temp_method,
                     "floor_height_m",
                     method_id,
-                    "accuracy_measure",
+                    "confidence",
                     storey=0,
                     join_by="cadastre",
                     step_counting=False,
@@ -703,7 +703,7 @@ def ingest_validation_measures(
                 temp_method,
                 "floor_height_m",
                 step_count_id,
-                "accuracy_measure",
+                "confidence",
                 storey=0,
                 join_by="intersects",
                 step_counting=True,
@@ -716,7 +716,7 @@ def ingest_validation_measures(
                 temp_method,
                 "floor_height_m",
                 survey_id,
-                "accuracy_measure",
+                "confidence",
                 storey=0,
                 join_by="intersects",
                 step_counting=False,
@@ -734,7 +734,7 @@ def ingest_validation_measures(
                     temp_method,
                     "floor_height_m",
                     step_count_id,
-                    "accuracy_measure",
+                    "confidence",
                     storey=0,
                     join_by="cadastre",
                     step_counting=True,
@@ -745,7 +745,7 @@ def ingest_validation_measures(
                     temp_method,
                     "floor_height_m",
                     survey_id,
-                    "accuracy_measure",
+                    "confidence",
                     storey=0,
                     join_by="cadastre",
                     step_counting=False,
@@ -922,7 +922,7 @@ def ingest_main_method_measures(
 @click.command()
 @click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to parquet file containing gap fill measures.")  # fmt: skip
 @click.option("--ffh-field", type=str, default="ensemble_ffh", help="Name of the first floor height field in the input parquet.")  # fmt: skip
-@click.option("--accuracy-field", type=str, default="ensemble_confidence", help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("--confidence-field", type=str, default="ensemble_confidence", help="Name of the first floor height confidence field.")  # fmt: skip
 @click.option("--method-name",  type=str, default="Main Method - Ensemble", help="Name of the floor measure method.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
@@ -930,7 +930,7 @@ def ingest_main_method_measures(
 def ingest_gap_fill_measures(
     input_file: click.Path,
     ffh_field: str,
-    accuracy_field: str,
+    confidence_field: str,
     method_name: str,
     dataset_name: str,
     dataset_desc: str,
@@ -948,18 +948,14 @@ def ingest_gap_fill_measures(
     except Exception as error:
         raise click.exceptions.FileError(input_file, error)
 
-    if ffh_field not in method_df.columns:
+    if confidence_field is not None and confidence_field not in method_df.columns:
         raise click.exceptions.BadParameter(
-            f"Field '{ffh_field}' not found in input parquet file"
+            f"Field '{confidence_field}' not found in input parquet file"
         )
-    if accuracy_field is not None and accuracy_field not in method_df.columns:
-        raise click.exceptions.BadParameter(
-            f"Field '{accuracy_field}' not found in input parquet file"
-        )
-    if accuracy_field is not None:
-        method_df = method_df.rename(columns={accuracy_field: "accuracy_measure"})
+    if confidence_field is not None:
+        method_df = method_df.rename(columns={confidence_field: "confidence"})
     else:
-        method_df["accuracy_measure"] = None
+        method_df["confidence"] = None
 
     method_df = method_df.drop(columns=["geometry"])
     method_df["height"] = method_df[ffh_field]
@@ -983,7 +979,7 @@ def ingest_gap_fill_measures(
             "building_id",
             "height",
             "storey",
-            "accuracy_measure",
+            "confidence",
         ],
         axis=1,
     ).copy()

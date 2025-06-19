@@ -18,7 +18,7 @@ interface FloorMeasure {
   id: string;
   storey: number;
   height: number;
-  accuracy_measure: number | null;
+  confidence: number | null;
   aux_info?: Record<string, any> | null;
   method: string;
   datasets: string[];
