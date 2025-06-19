@@ -11,6 +11,7 @@ setup(
     namespace_packages=["floorheights"],
     install_requires=[
         "alembic",
+        "boto3",
         "click",
         "GeoAlchemy2",
         "geopandas",

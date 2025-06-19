@@ -2,12 +2,14 @@ import json
 import uuid
 from pathlib import Path
 
+import boto3
 import click
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import psycopg2
 import rasterio
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from shapely.geometry import box
 from sqlalchemy import JSON, UUID, LargeBinary, Numeric, String, Table, select
 from sqlalchemy.orm import declarative_base
@@ -417,7 +419,7 @@ def ingest_nexis_measures(
         temp_nexis = Table("temp_nexis", Base.metadata, autoload_with=conn)
 
         # Build select query to insert into the floor_measure table for GNAF ID matches
-        method_id = etl.get_or_create_method_id(session, "Inverse transform sampling")
+        method_id = etl.get_or_create_method_id(session, "Random Sampling")
         modelled_query_gnaf = etl.build_floor_measure_query(
             temp_nexis,
             "floor_height_m",
@@ -779,9 +781,9 @@ def ingest_validation_measures(
 @click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing main methodology measures.")  # fmt: skip
 @click.option("--ffh-field", type=str, default="floor_height_consensus", help="Name of the first floor height field in the input JSON.")  # fmt: skip
 @click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Object Detection Estimation", help="Name of the floor measure method.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Main Methodology", help="Name of the floor measure dataset.")  # fmt: skip
-@click.option("--dataset-desc", type=str, default="Main methodology output from the processing pipeline", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--method-name",  type=str, default="Main Method", help="Name of the floor measure method.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_main_method_measures(
     input_json: click.File,
@@ -834,6 +836,10 @@ def ingest_main_method_measures(
     method_df.columns = method_df.columns.str.lower().str.replace(
         r"\W+", "", regex=True
     )
+
+    # Create UUID index
+    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
+    method_df = method_df.set_index(["id"])
 
     # Create aux_info json column
     aux_info_df = method_df.drop(
@@ -935,9 +941,9 @@ def ingest_main_method_measures(
 @click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing gap fill measures.")  # fmt: skip
 @click.option("--ffh-field", type=str, default="gap_fill_ffh", help="Name of the first floor height field in the input JSON.")  # fmt: skip
 @click.option("--accuracy-field", type=str, default="gap_fill_confidence_score", help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Regression", help="Name of the floor measure method.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Gap Fill", help="Name of the floor measure dataset.")  # fmt: skip
-@click.option("--dataset-desc", type=str, default="Gap Fill output from the processing pipeline", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--method-name",  type=str, default="Gap Fill", help="Name of the floor measure method.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_gap_fill_measures(
     input_json: click.File,
@@ -1048,9 +1054,9 @@ def ingest_gap_fill_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="Main Methodology", help="Name of the floor measure dataset to attach images to.")  # fmt: skip
+@click.option("--method-name", type=str, default="Main Method", help="Name of the floor measure method to attach images to.")  # fmt: skip
 def ingest_main_method_images(
-    pano_path: click.Path, lidar_path: click.Path, dataset_name: str
+    pano_path: click.Path, lidar_path: click.Path, method_name: str
 ):
     """Ingest main methodology images
 
@@ -1072,7 +1078,8 @@ def ingest_main_method_images(
         conn = session.connection()
         click.echo("Selecting records from floor_measure table...")
 
-        measure_df = etl.get_measure_image_names(conn, dataset_name)
+        # Get the image names for the specified method
+        measure_df = etl.get_measure_image_names(conn, method_name)
 
         if measure_df.empty:
             raise click.UsageError(
@@ -1083,46 +1090,59 @@ def ingest_main_method_images(
         for image_type, image_path in [("panorama", pano_path), ("lidar", lidar_path)]:
             if image_path:
                 click.echo(f"Ingesting {image_type} images...")
-                # Associate Method IDs with image paths
-                image_df = measure_df[["frame_filename"]].copy()
+
+                filename_field = (
+                    "pano_filename" if image_type == "panorama" else "lidar_filename"
+                )
+
+                image_df = measure_df[
+                    ["best_view_pano_filename", filename_field]
+                ].copy()
 
                 # Get image filenames by globbing the image_path
-                image_df["image_path"] = image_df.frame_filename.apply(
+                image_df[filename_field] = image_df[filename_field].apply(
                     lambda filename: list(
                         Path(image_path).glob(f"{Path(filename).stem}*")
                     )
                 )
-                if image_df["image_path"].apply(len).sum() == 0:
+
+                if image_df[filename_field].apply(len).sum() == 0:
                     raise click.UsageError(
                         f"No {image_type} images found in the path '{image_path}'."
                     )
 
                 # Normalise so that each row contains one filepath
-                image_df = image_df.explode("image_path")
-                image_df = image_df[image_df["image_path"].notna()]
+                image_df = image_df.explode(filename_field)
+                image_df = image_df[image_df[filename_field].notna()]
 
                 # Add ID and additional fields
                 image_df["id"] = [uuid.uuid4() for _ in range(len(image_df.index))]
                 image_df = image_df.set_index(["id"], drop=True)
-                image_df["filename"] = image_df.image_path.apply(
+                image_df["filename"] = image_df[filename_field].apply(
                     lambda path: Path(path).name
                 )
                 image_df["type"] = image_type
 
                 # Join the floor_measure_ids
                 image_df = image_df.join(
-                    measure_df[["id", "frame_filename"]].set_index("frame_filename"),
-                    on="frame_filename",
+                    measure_df[["id", "best_view_pano_filename"]].set_index(
+                        "best_view_pano_filename"
+                    ),
+                    on="best_view_pano_filename",
                 )
                 image_df = image_df.rename(columns={"id": "floor_measure_id"})
 
                 # Create byte arrays of the images
-                image_df["image_data"] = image_df.image_path.apply(
+                image_df["image_data"] = image_df[filename_field].apply(
                     lambda filename: image_to_bytearray(filename)
                 )
 
                 image_df = image_df.drop(
-                    columns=["frame_filename", "image_path"], axis=1
+                    columns=[
+                        "best_view_pano_filename",
+                        filename_field,
+                    ],
+                    axis=1,
                 )
 
                 image_df.to_sql(
@@ -1175,6 +1195,113 @@ def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: 
     click.echo("Export complete")
 
 
+@click.command()
+@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to FFH model output JSON.")  # fmt: skip
+@click.option("--s3-uri", required=True, type=str, help="Root S3 URI path containing the images.")  # fmt: skip
+@click.option("--areas", type=click.Choice(["Wagga", "Tweed", "Launceston"], case_sensitive=False), default=["Wagga", "Tweed", "Launceston"], multiple=True, help="The areas to download associated images, option can be used multiple times to download multiple areas.")  # fmt: skip
+@click.option("--type", type=click.Choice(["pano", "lidar"], case_sensitive=False), default=["pano", "lidar"], multiple=True, help="The types of images to download, option can be used multiple times to download multiple types.")  # fmt: skip
+@click.option("-o", "--output-dir", required=True, type=click.Path(file_okay=False, dir_okay=True, writable=True), help="Local directory to save downloaded images, images will be download into sub directories for each image type.")  # fmt: skip
+def download_images_s3(
+    input_json: click.File,
+    s3_uri: str,
+    areas: list,
+    type: list,
+    output_dir: click.Path,
+):
+    """Download main methodology images from S3
+
+    Downloads images from an S3 bucket based on the provided JSON file and saves them to
+    a local directory.
+
+    Requires the S3 URI to be in the format 's3://bucket-name/prefix/', and is the path
+    to the root of each region containing the images.
+
+    AWS credentials must be configured in the environment or via the AWS CLI.
+    """
+    click.secho("Downloading images from S3", bold=True)
+    try:
+        json_data = json.load(input_json)
+        json_df = pd.DataFrame(json_data["buildings"])
+    except Exception as error:
+        raise click.exceptions.FileError(input_json.name, error)
+
+    json_df = json_df[~json_df["floor_height_consensus"].isna()]
+    json_df = json_df.drop_duplicates(subset=["building_id", "floor_height_consensus"])
+
+    json_df = json_df[json_df.region.isin(areas)]
+
+    s3 = boto3.client("s3")
+    bucket_name, prefix = s3_uri.strip("/").replace("s3://", "").split("/", 1)
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for image_type in type:
+        folder = "clips" if image_type == "pano" else "3d_point_clouds"
+        type_output_dir = output_dir / (f"{image_type}_images")
+        type_output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create image prefixes for panorama images
+        if image_type == "pano":
+            json_df["image_prefixes"] = (
+                json_df.region.astype(str)
+                + "/"
+                + folder
+                + "/"
+                + json_df.building_id.astype(str)
+                + "_"
+                + json_df.gnaf_id.astype(str)
+                + "/"
+                + json_df.best_view_pano_filename.astype(str).apply(
+                    lambda x: Path(x).stem
+                )
+            )
+        # Create image prefixes for lidar images
+        elif image_type == "lidar":
+            json_df["image_prefixes"] = (
+                json_df.region.astype(str)
+                + "/"
+                + folder
+                + "/"
+                + json_df.building_id.astype(str)
+                + "_"
+                + json_df.gnaf_id.astype(str)
+                + "/"
+                + json_df.building_id.astype(str)
+                + "_"
+                + json_df.gnaf_id.astype(str)
+                + "_3d_point_cloud.jpg"
+            )
+
+        with click.progressbar(
+            json_df["image_prefixes"], label=f"Downloading {image_type} images"
+        ) as bar:
+            for image_prefix in bar:
+                s3_key_prefix = f"{prefix}/{image_prefix}"
+                try:
+                    response = s3.list_objects_v2(
+                        Bucket=bucket_name, Prefix=s3_key_prefix
+                    )
+                    if "Contents" in response:
+                        for obj in response["Contents"]:
+                            s3_key = obj["Key"]
+                            local_file_path = type_output_dir / Path(s3_key).name
+                            s3.download_file(bucket_name, s3_key, str(local_file_path))
+                    else:
+                        click.echo(
+                            f"Warning: No images found for prefix {s3_key_prefix}",
+                            err=True,
+                        )
+                except NoCredentialsError:
+                    raise click.UsageError("AWS credentials not found.")
+                except PartialCredentialsError:
+                    raise click.UsageError("Incomplete AWS credentials configuration.")
+                except Exception as error:
+                    click.echo(f"Failed to download {s3_key_prefix}: {error}", err=True)
+
+    click.echo("Image download complete")
+
+
 cli.add_command(ingest_address_points)
 cli.add_command(ingest_buildings)
 cli.add_command(join_address_buildings)
@@ -1184,6 +1311,7 @@ cli.add_command(ingest_main_method_measures)
 cli.add_command(ingest_gap_fill_measures)
 cli.add_command(ingest_main_method_images)
 cli.add_command(export_ogr_file)
+cli.add_command(download_images_s3)
 
 
 if __name__ == "__main__":

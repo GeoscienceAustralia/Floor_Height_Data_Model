@@ -1,41 +1,43 @@
 import csv
-import geopandas as gpd
 import json
+import uuid
+from collections.abc import Iterable
+from io import StringIO
+from pathlib import Path
+from typing import Literal
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-import uuid
-from collections.abc import Iterable
-from geoalchemy2 import Geometry, Geography
-from io import StringIO
+from geoalchemy2 import Geography, Geometry
 from pyproj import CRS
 from rasterio.mask import mask
 from sqlalchemy import (
-    Table,
-    Column,
-    Result,
-    Integer,
-    Select,
     BinaryExpression,
-    select,
+    Column,
+    Integer,
+    Result,
+    Select,
+    Table,
     delete,
-    not_,
     exists,
-    text,
-    literal,
     func,
+    literal,
+    not_,
+    select,
+    text,
 )
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine, Connection
-from sqlalchemy.orm import Session, InstrumentedAttribute, DeclarativeMeta, aliased
-from typing import Literal
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.orm import DeclarativeMeta, InstrumentedAttribute, Session, aliased
 
 from floorheights.datamodel.models import (
     AddressPoint,
     Building,
+    Dataset,
     FloorMeasure,
     Method,
-    Dataset,
     address_point_building_association,
     floor_measure_dataset_association,
 )
@@ -754,7 +756,11 @@ def get_or_create_dataset_id(
         ID of the dataset.
     """
     dataset_id = session.execute(
-        select(Dataset.id).filter(Dataset.name == dataset_name)
+        select(Dataset.id).filter(
+            Dataset.name == dataset_name,
+            Dataset.description == dataset_desc,
+            Dataset.source == dataset_src,
+        )
     ).first()
     if not dataset_id:
         dataset = Dataset(
@@ -1057,7 +1063,7 @@ def grid_to_geo(gdf: gpd.GeoDataFrame):
     return gdf
 
 
-def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame:
+def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
     """
     Get FloorMeasure IDs and image names from the aux_info field.
 
@@ -1065,8 +1071,8 @@ def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame
     ----------
     conn : Connection
         SQLAlchemy connection object.
-    dataset_name : str
-        Name of the dataset.
+    method_name : str
+        Name of the method to get image names from.
 
     Returns
     -------
@@ -1077,16 +1083,29 @@ def get_measure_image_names(conn: Connection, dataset_name: str) -> pd.DataFrame
         select(
             FloorMeasure.id,
             FloorMeasure.aux_info,
+            Building.id.label("building_id"),
         )
         .select_from(FloorMeasure)
-        .join(Dataset, FloorMeasure.datasets)
-        .filter(Dataset.name == dataset_name)
+        .join(Building)
+        .join(Method)
+        .filter(Method.name == method_name)
     )
     measure_df = pd.read_sql(select_query, conn)
     measure_df = pd.concat(
         [measure_df, pd.json_normalize(measure_df.pop("aux_info"))], axis=1
     )
-    measure_df = measure_df.drop_duplicates(subset=["frame_filename"])
+    measure_df = measure_df.drop_duplicates(subset=["best_view_pano_filename"])
+
+    measure_df["pano_filename"] = measure_df.best_view_pano_filename.astype(str).apply(
+        lambda x: Path(x).stem
+    )
+
+    measure_df["lidar_filename"] = (
+        measure_df.building_id.astype(str)
+        + "_"
+        + measure_df.gnaf_id.astype(str)
+        + "_3d_point_cloud"
+    )
 
     return measure_df
 
@@ -1116,11 +1135,11 @@ def build_denormalised_query() -> Select:
             Building.land_use_zone,
             Building.outline,
         )
-        .select_from(FloorMeasure)
-        .join(Method, FloorMeasure.method)
-        .join(Dataset, FloorMeasure.datasets)
-        .join(Building)
-        .join(AddressPoint, Building.address_points)
+        .select_from(Building)
+        .outerjoin(FloorMeasure)
+        .outerjoin(Method, FloorMeasure.method)
+        .outerjoin(Dataset, FloorMeasure.datasets)
+        .outerjoin(AddressPoint, Building.address_points)
     )
 
     return select_query
