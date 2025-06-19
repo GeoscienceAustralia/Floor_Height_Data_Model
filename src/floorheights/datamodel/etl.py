@@ -1049,7 +1049,7 @@ def get_measure_image_names(conn: Connection) -> pd.DataFrame:
         select(
             FloorMeasure.id,
             FloorMeasure.aux_info,
-            Building.id.label("building_id"),
+            FloorMeasure.building_id,
         )
         .select_from(FloorMeasure)
         .join(Method)

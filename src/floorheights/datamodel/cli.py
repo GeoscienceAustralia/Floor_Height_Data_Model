@@ -1126,6 +1126,7 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                     conn,
                     schema="public",
                     if_exists="append",
+                    index=False,
                     dtype={
                         "image_data": LargeBinary,
                         "floor_measure_id": UUID,
