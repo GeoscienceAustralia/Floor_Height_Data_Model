@@ -6,3 +6,4 @@ pydantic==2.9.2
 geojson-pydantic==1.1.2
 starlette==0.41.3
 httpx==0.28.1
+pillow==11.2.1
