@@ -1099,9 +1099,7 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                         )[0]
                     )
 
-                # Add ID and additional fields
-                image_df["id"] = [uuid.uuid4() for _ in range(len(image_df.index))]
-                image_df = image_df.set_index(["id"], drop=True)
+                # Add additional fields
                 image_df["filename"] = image_df[filename_field].apply(
                     lambda path: Path(path).name
                 )
