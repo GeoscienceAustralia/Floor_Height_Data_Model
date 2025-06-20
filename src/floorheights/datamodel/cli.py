@@ -1026,10 +1026,7 @@ def ingest_gap_fill_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
-@click.option("--method-name", type=str, default="Main Method", help="Name of the floor measure method to attach images to.")  # fmt: skip
-def ingest_main_method_images(
-    pano_path: click.Path, lidar_path: click.Path, method_name: str
-):
+def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
     """Ingest main methodology images
 
     Takes a path to Panorama and/or LIDAR images ingests them into the data model.
@@ -1040,8 +1037,11 @@ def ingest_main_method_images(
         )
 
     def image_to_bytearray(image_path):
-        with open(image_path, "rb") as f:
-            return f.read()
+        try:
+            with open(image_path, "rb") as f:
+                return f.read()
+        except FileNotFoundError as error:
+            click.echo(f"Skipping image: {error}")
 
     click.secho("Ingesting Main Methodology images", bold=True)
 
@@ -1051,7 +1051,7 @@ def ingest_main_method_images(
         click.echo("Selecting records from floor_measure table...")
 
         # Get the image names for the specified method
-        measure_df = etl.get_measure_image_names(conn, method_name)
+        measure_df = etl.get_measure_image_names(conn)
 
         if measure_df.empty:
             raise click.UsageError(
@@ -1064,28 +1064,24 @@ def ingest_main_method_images(
                 click.echo(f"Ingesting {image_type} images...")
 
                 filename_field = (
-                    "pano_filename" if image_type == "panorama" else "lidar_filename"
+                    "clip_path" if image_type == "panorama" else "lidar_clip_path"
                 )
 
-                image_df = measure_df[
-                    ["best_view_pano_filename", filename_field]
-                ].copy()
+                image_df = measure_df[["id", filename_field]].copy()
+                image_df = image_df.rename(columns={"id": "floor_measure_id"})
 
-                # Get image filenames by globbing the image_path
-                image_df[filename_field] = image_df[filename_field].apply(
-                    lambda filename: list(
-                        Path(image_path).glob(f"{Path(filename).stem}*")
+                # Get image filepaths
+                if image_type == "panorama":
+                    image_df[filename_field] = image_df[filename_field].apply(
+                        lambda filename: Path(image_path) / Path(filename).name
                     )
-                )
-
-                if image_df[filename_field].apply(len).sum() == 0:
-                    raise click.UsageError(
-                        f"No {image_type} images found in the path '{image_path}'."
+                else:
+                    # TODO Set lidar_clip_path to full path
+                    image_df[filename_field] = image_df[filename_field].apply(
+                        lambda filename: list(
+                            (Path(image_path) / Path(filename).name).glob("*")
+                        )[0]
                     )
-
-                # Normalise so that each row contains one filepath
-                image_df = image_df.explode(filename_field)
-                image_df = image_df[image_df[filename_field].notna()]
 
                 # Add ID and additional fields
                 image_df["id"] = [uuid.uuid4() for _ in range(len(image_df.index))]
@@ -1095,23 +1091,15 @@ def ingest_main_method_images(
                 )
                 image_df["type"] = image_type
 
-                # Join the floor_measure_ids
-                image_df = image_df.join(
-                    measure_df[["id", "best_view_pano_filename"]].set_index(
-                        "best_view_pano_filename"
-                    ),
-                    on="best_view_pano_filename",
-                )
-                image_df = image_df.rename(columns={"id": "floor_measure_id"})
-
                 # Create byte arrays of the images
                 image_df["image_data"] = image_df[filename_field].apply(
                     lambda filename: image_to_bytearray(filename)
                 )
 
+                image_df = image_df[image_df["image_data"].notna()]
+
                 image_df = image_df.drop(
                     columns=[
-                        "best_view_pano_filename",
                         filename_field,
                     ],
                     axis=1,
