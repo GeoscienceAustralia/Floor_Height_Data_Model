@@ -483,15 +483,17 @@ def draw_object_detection_boxes(
         image = Image.open(BytesIO(image_data))
         draw = ImageDraw.Draw(image)
 
-        for obj in aux_info.get("object_detections", []):
-            box = obj.get("bbox_xyxy")
-            class_name = obj.get("class")
+        for obj in aux_info.get("bboxes", []):
+            x1 = obj.get("bbox_x1")
+            y1 = obj.get("bbox_y1")
+            x2 = obj.get("bbox_x2")
+            y2 = obj.get("bbox_y2")
+            class_name = obj.get("class_name")
             class_color = __color_for_class(class_name)
             confidence = obj.get("confidence")
             confidence = f"{confidence:.2f}"
             # draw detection bbox
-            if box:
-                x1, y1, x2, y2 = box
+            if class_name:
                 draw.rectangle([x1, y1, x2, y2], outline=class_color, width=4)
 
             # following three vars should be enough to tweak the font size, and the boxes
