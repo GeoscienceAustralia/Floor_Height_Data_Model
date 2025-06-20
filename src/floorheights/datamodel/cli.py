@@ -778,15 +778,141 @@ def ingest_validation_measures(
 
 
 @click.command()
-@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing main methodology measures.")  # fmt: skip
-@click.option("--ffh-field", type=str, default="floor_height_consensus", help="Name of the first floor height field in the input JSON.")  # fmt: skip
-@click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Main Method", help="Name of the floor measure method.")  # fmt: skip
+@click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to parquet file containing main methodology measures.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_main_method_measures(
-    input_json: click.File,
+    input_file: click.Path,
+    dataset_name: str,
+    dataset_desc: str,
+    dataset_src: str,
+):
+    """Ingest main methodology from floor height parquet
+
+    Takes a parquet file output from the processing workflow and ingests Main
+    Methodology measures into the data model.
+    """
+    click.secho("Ingesting Main Methodology measures", bold=True)
+    try:
+        click.echo("Loading Floor Height parquet...")
+        method_df = pd.read_parquet(input_file)
+    except Exception as error:
+        raise click.exceptions.FileError(input_file, error)
+
+    # Drop original geometry, set to location of door
+    method_df = method_df.drop(columns=["geometry"])
+    method_gdf = gpd.GeoDataFrame(
+        method_df,
+        geometry=gpd.points_from_xy(
+            method_df["door_lon"], method_df["door_lat"], crs="EPSG:7844"
+        ),
+    )
+    method_gdf = method_gdf.rename_geometry("location")
+
+    method_gdf["storey"] = 0
+
+    # Cast building_id strings to UUIDs
+    method_gdf["building_id"] = method_gdf["building_id"].apply(uuid.UUID)
+
+    # Make method input column names lower case and remove special characters
+    method_gdf.columns = method_gdf.columns.str.lower().str.replace(
+        r"\W+", "", regex=True
+    )
+
+    # Deserialise bboxes as a list of dicts
+    method_gdf["bboxes"] = method_gdf["bboxes"].apply(lambda row: json.loads(row))
+
+    # Create aux_info json column
+    aux_info_df = method_gdf.drop(
+        columns=[
+            "building_id",
+            "storey",
+            "location",
+        ],
+        axis=1,
+    ).copy()
+    aux_info_df = aux_info_df.replace(np.nan, None)
+    method_gdf["aux_info"] = aux_info_df.apply(
+        lambda row: json.dumps(row.to_dict()), axis=1
+    )
+    # method_gdf = method_gdf.drop(columns=aux_info_df.columns, axis=1)
+
+    session = SessionLocal()
+    with session.begin():
+        conn = session.connection()
+        click.echo("Inserting records into floor_measure table...")
+
+        methods = {
+            "ffh1": "Main Method - FFH1",
+            "ffh2": "Main Method - FFH2",
+            "ffh3": "Main Method - FFH3",
+        }
+
+        # Iterate methods from the processing output and ingest measures
+        for method_field, method_name in methods.items():
+            # Filter method_gdf for the current method
+            method_gdf_filtered = method_gdf[method_gdf[method_field].notna()].copy()
+            method_gdf_filtered["height"] = method_gdf_filtered[method_field]
+
+            if method_gdf_filtered.empty:
+                click.echo(f"No records found for {method_field}, skipping...")
+                continue
+
+            method_id = etl.get_or_create_method_id(session, method_name)
+            method_dataset_id = etl.get_or_create_dataset_id(
+                session, dataset_name, dataset_desc, dataset_src
+            )
+
+            method_gdf_filtered["method_id"] = method_id
+
+            # Create UUID index
+            method_gdf_filtered["id"] = [
+                uuid.uuid4() for _ in range(len(method_gdf_filtered.index))
+            ]
+            method_gdf_filtered = method_gdf_filtered.set_index(["id"])
+
+            try:
+                method_gdf_filtered.drop(
+                    columns=aux_info_df.columns, axis=1
+                ).to_postgis(
+                    "floor_measure",
+                    conn,
+                    schema="public",
+                    if_exists="append",
+                    index=True,
+                    dtype={
+                        "id": UUID,
+                        "building_id": UUID,
+                        "method_id": UUID,
+                        "height": Numeric,
+                        "aux_info": JSON,
+                    },
+                )
+            except psycopg2.errors.ForeignKeyViolation:
+                raise click.UsageError(
+                    "The ingest-main-method-measures command can only be used after "
+                    "ingesting buildings, also ensure that the building IDs match those "
+                    "in the input JSON."
+                )
+
+            etl.insert_floor_measure_dataset_association(
+                session, method_dataset_id, method_gdf_filtered.index.tolist()
+            )
+
+    click.echo("Main methodology ingestion complete")
+
+
+@click.command()
+@click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to parquet file containing gap fill measures.")  # fmt: skip
+@click.option("--ffh-field", type=str, default="ensemble_ffh", help="Name of the first floor height field in the input parquet.")  # fmt: skip
+@click.option("--accuracy-field", type=str, default="ensemble_confidence", help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("--method-name",  type=str, default="Main Method - Ensemble", help="Name of the floor measure method.")  # fmt: skip
+@click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
+@click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
+def ingest_gap_fill_measures(
+    input_file: click.Path,
     ffh_field: str,
     accuracy_field: str,
     method_name: str,
@@ -794,39 +920,34 @@ def ingest_main_method_measures(
     dataset_desc: str,
     dataset_src: str,
 ):
-    """Ingest main methodology from floor height JSON
+    """Ingest gap fill measures from floor height parquet
 
-    Takes a JSON file output from the processing workflow and ingests Main Methodology
-    measures into the data model.
+    Takes a parquet file output from the processing workflow and ingests Gap Fill
+    (ensemble) measures into the data model.
     """
-    click.secho("Ingesting Main Methodology measures", bold=True)
+    click.secho("Ingesting Gap Fill measures", bold=True)
     try:
-        click.echo("Loading Floor Height JSON...")
-        json_data = json.load(input_json)
-        method_df = pd.DataFrame(json_data["buildings"])
+        click.echo("Loading Floor Height parquet...")
+        method_df = pd.read_parquet(input_file)
     except Exception as error:
-        raise click.exceptions.FileError(input_json.name, error)
+        raise click.exceptions.FileError(input_file, error)
 
+    if ffh_field not in method_df.columns:
+        raise click.exceptions.BadParameter(
+            f"Field '{ffh_field}' not found in input parquet file"
+        )
     if accuracy_field is not None and accuracy_field not in method_df.columns:
         raise click.exceptions.BadParameter(
-            f"Field '{accuracy_field}' not found in input JSON file"
+            f"Field '{accuracy_field}' not found in input parquet file"
         )
     if accuracy_field is not None:
         method_df = method_df.rename(columns={accuracy_field: "accuracy_measure"})
     else:
         method_df["accuracy_measure"] = None
 
-    method_df = method_df.rename(
-        columns={
-            "id": "building_id",
-            ffh_field: "height",
-            "latitude": "easting",
-            "longitude": "northing",
-        }
-    )
-
+    method_df = method_df.drop(columns=["geometry"])
+    method_df["height"] = method_df[ffh_field]
     method_df = method_df[~method_df["height"].isna()]
-    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
     method_df["storey"] = 0
 
     # Cast building_id strings to UUIDs
@@ -837,9 +958,8 @@ def ingest_main_method_measures(
         r"\W+", "", regex=True
     )
 
-    # Create UUID index
-    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
-    method_df = method_df.set_index(["id"])
+    # Deserialise bboxes as a list of dicts
+    method_df["bboxes"] = method_df["bboxes"].apply(lambda row: json.loads(row))
 
     # Create aux_info json column
     aux_info_df = method_df.drop(
@@ -848,8 +968,6 @@ def ingest_main_method_measures(
             "height",
             "storey",
             "accuracy_measure",
-            "easting",
-            "northing",
         ],
         axis=1,
     ).copy()
@@ -864,155 +982,9 @@ def ingest_main_method_measures(
         conn = session.connection()
         click.echo("Inserting records into floor_measure table...")
 
-        # Get building centroids from the database, we need to join these to derive the
-        # Map Grid of Australia (MGA) Zone for easting and northing coordinates
-        buildings = gpd.read_postgis(
-            select(Building),
-            conn,
-            geom_col="outline",
-        )
-        if buildings.empty:
-            raise click.UsageError(
-                "The ingest-main-method-measures command can only be used after "
-                "ingesting buildings."
-            )
-        buildings["centroid"] = buildings.outline.representative_point()
-        buildings = buildings.set_geometry("centroid")
-
-        # Join building centroids to method dataframe
-        method_df = method_df.merge(
-            buildings[["id", "centroid"]],
-            left_on="building_id",
-            right_on="id",
-            how="left",
-        )
-
-        # Convert the grid coordinates to geographic coordinates
-        method_df = gpd.GeoDataFrame(method_df, geometry="centroid", crs=7844)
-        method_df = etl.grid_to_geo(method_df)
-
         # Create UUID index
         method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
         method_df = method_df.set_index(["id"])
-
-        method_df = method_df.drop(
-            columns=["centroid", "easting", "northing", "mga_zone"],
-        )
-        method_df = method_df.rename_geometry("location")
-
-        method_id = etl.get_or_create_method_id(session, method_name)
-        method_dataset_id = etl.get_or_create_dataset_id(
-            session, dataset_name, dataset_desc, dataset_src
-        )
-
-        method_df["method_id"] = method_id
-
-        try:
-            method_df.to_sql(
-                "floor_measure",
-                conn,
-                schema="public",
-                if_exists="append",
-                index=True,
-                dtype={
-                    "id": UUID,
-                    "building_id": UUID,
-                    "method_id": UUID,
-                    "height": Numeric,
-                    "aux_info": JSON,
-                },
-                method=etl.psql_insert_copy,
-            )
-        except psycopg2.errors.ForeignKeyViolation:
-            raise click.UsageError(
-                "The ingest-main-method-measures command can only be used after "
-                "ingesting buildings, also ensure that the building IDs match those "
-                "in the input JSON."
-            )
-
-        etl.insert_floor_measure_dataset_association(
-            session, method_dataset_id, method_df.index.tolist()
-        )
-
-    click.echo("Main methodology ingestion complete")
-
-
-@click.command()
-@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing gap fill measures.")  # fmt: skip
-@click.option("--ffh-field", type=str, default="gap_fill_ffh", help="Name of the first floor height field in the input JSON.")  # fmt: skip
-@click.option("--accuracy-field", type=str, default="gap_fill_confidence_score", help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Gap Fill", help="Name of the floor measure method.")  # fmt: skip
-@click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
-@click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
-@click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
-def ingest_gap_fill_measures(
-    input_json: click.File,
-    ffh_field: str,
-    accuracy_field: str,
-    method_name: str,
-    dataset_name: str,
-    dataset_desc: str,
-    dataset_src: str,
-):
-    """Ingest gap fill measures from floor height JSON
-
-    Takes a JSON file output from the processing workflow and ingests Gap Fill measures
-    into the data model.
-    """
-    click.secho("Ingesting Gap Fill measures", bold=True)
-    try:
-        click.echo("Loading Floor Height JSON...")
-        json_data = json.load(input_json)
-        method_df = pd.DataFrame(json_data["buildings"])
-    except Exception as error:
-        raise click.exceptions.FileError(input_json.name, error)
-
-    if accuracy_field is not None and accuracy_field not in method_df.columns:
-        raise click.exceptions.BadParameter(
-            f"Field '{accuracy_field}' not found in input JSON file"
-        )
-    if accuracy_field is not None:
-        method_df = method_df.rename(columns={accuracy_field: "accuracy_measure"})
-    else:
-        method_df["accuracy_measure"] = None
-
-    method_df = method_df.rename(
-        columns={
-            "id": "building_id",
-            ffh_field: "height",
-        }
-    )
-
-    method_df = method_df[~method_df["height"].isna()]
-    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
-    method_df["storey"] = 0
-
-    # Cast building_id strings to UUIDs
-    method_df["building_id"] = method_df["building_id"].apply(uuid.UUID)
-
-    # Make method input column names lower case and remove special characters
-    method_df.columns = method_df.columns.str.lower().str.replace(
-        r"\W+", "", regex=True
-    )
-
-    # Create UUID index
-    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
-    method_df = method_df.set_index(["id"])
-
-    # Create aux_info json column
-    aux_info_df = method_df.drop(
-        columns=["building_id", "height", "storey", "accuracy_measure"], axis=1
-    ).copy()
-    aux_info_df = aux_info_df.replace(np.nan, None)
-    method_df["aux_info"] = aux_info_df.apply(
-        lambda row: json.dumps(row.to_dict()), axis=1
-    )
-    method_df = method_df.drop(columns=aux_info_df.columns, axis=1)
-
-    session = SessionLocal()
-    with session.begin():
-        conn = session.connection()
-        click.echo("Inserting records into floor_measure table...")
 
         method_id = etl.get_or_create_method_id(session, method_name)
         method_dataset_id = etl.get_or_create_dataset_id(
@@ -1041,14 +1013,14 @@ def ingest_gap_fill_measures(
             raise click.UsageError(
                 "The ingest-gap-fill-measures command can only be used after "
                 "ingesting buildings, also ensure that the building IDs match those "
-                "in the input JSON."
+                "in the input parquet."
             )
 
         etl.insert_floor_measure_dataset_association(
             session, method_dataset_id, method_df.index.tolist()
         )
 
-    click.echo("Gap fill ingestion complete")
+    click.echo("Gap Fill ingestion complete")
 
 
 @click.command()
