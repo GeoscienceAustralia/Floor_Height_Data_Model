@@ -1003,66 +1003,6 @@ def insert_floor_measure_dataset_association(
     )
 
 
-def get_mga_zone(longitude: float):
-    """
-    Determine the MGA (Map Grid of Australia) zone for a given longitude.
-
-    MGA zones correspond to UTM (Universal Transverse Mercator) zones ranging
-    from 110°E to 155°E in Australia. Each zone spans 6° of longitude.
-
-    Parameters
-    ----------
-    longitude : float
-        Longitude in decimal degrees.
-
-    Returns
-    -------
-    int or None
-        The MGA zone number if the longitude is within the MGA bounds, otherwise None.
-    """
-    if 110 <= longitude <= 155:
-        return int((longitude + 180) // 6) + 1
-    else:
-        return None  # Out of MGA zone bounds
-
-
-def grid_to_geo(gdf: gpd.GeoDataFrame):
-    """
-    Convert a GeoDataFrame with grid coordinates to a GeoDataFrame with geometries.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame containing 'easting' and 'northing' columns representing grid
-        coordinates, and a geometry column in a geographic coordinate system to derive
-        the MGA (Map Grid of Australia) zone.
-
-    Returns
-    -------
-    gpd.GeoDataFrame
-        GeoDataFrame with points with geographic coordinates.
-    """
-    # Get MGA Zone from the geometry
-    gdf["mga_zone"] = gdf.geometry.x.apply(get_mga_zone)
-
-    # Split dataframes by different MGA Zones
-    gdf_list = []
-    for zone in gdf["mga_zone"].unique():
-        zone_df = gdf[gdf["mga_zone"] == zone].copy()
-        if not zone_df.empty and zone is not None:
-            # Set geometry to appropriate MGA Zone CRS (GDA2020 is assumed)
-            zone_df = gpd.GeoDataFrame(
-                zone_df,
-                geometry=gpd.points_from_xy(zone_df.northing, zone_df.easting),
-                crs=f"EPSG:78{int(zone)}",
-            )
-            # Convert MGA coordinates to geographic coordinates
-            gdf_list.append(zone_df.to_crs(7844))
-
-    gdf = pd.concat(gdf_list, ignore_index=True)
-    return gdf
-
-
 def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
     """
     Get FloorMeasure IDs and image names from the aux_info field.
