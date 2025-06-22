@@ -39,12 +39,13 @@ Table method {
 Table floor_measure {
 	id uuid [ pk, not null, unique ]
 	storey integer [ not null ]
+	height decimal [ not null ]
+	confidence decimal
 	building_id uuid [ not null ]
 	method_id uuid [ not null ]
 	dataset_group_id uuid [ not null ]
-	accuracy_measure decimal
 	aux_info json
-	height decimal [ not null ]
+	location point
 }
 
 Table floor_measure_dataset_association {
