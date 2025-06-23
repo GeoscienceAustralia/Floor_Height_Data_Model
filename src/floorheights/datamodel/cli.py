@@ -405,6 +405,7 @@ def ingest_nexis_measures(
 
         nexis_gdf["id"] = [uuid.uuid4() for _ in range(len(nexis_gdf.index))]
         nexis_gdf = nexis_gdf.set_index(["id"])
+        nexis_gdf = nexis_gdf.rename_geometry("location")
 
         click.echo("Copying NEXIS points to PostgreSQL...")
         nexis_gdf.to_postgis(
@@ -571,6 +572,7 @@ def ingest_validation_measures(
         method_gdf["accuracy_measure"] = None
 
     method_gdf = method_gdf.rename(columns={ffh_field: "floor_height_m"})
+    method_gdf = method_gdf.rename_geometry("location")
     method_gdf = method_gdf.dropna(subset=["floor_height_m"])
     method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True
@@ -776,129 +778,141 @@ def ingest_validation_measures(
 
 
 @click.command()
-@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing main methodology measures.")  # fmt: skip
-@click.option("--ffh-field", type=str, default="floor_height_consensus", help="Name of the first floor height field in the input JSON.")  # fmt: skip
-@click.option("--accuracy-field", type=str, default=None, help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Main Method", help="Name of the floor measure method.")  # fmt: skip
+@click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to parquet file containing main methodology measures.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_main_method_measures(
-    input_json: click.File,
-    ffh_field: str,
-    accuracy_field: str,
-    method_name: str,
+    input_file: click.Path,
     dataset_name: str,
     dataset_desc: str,
     dataset_src: str,
 ):
-    """Ingest main methodology from floor height JSON
+    """Ingest main methodology from floor height parquet
 
-    Takes a JSON file output from the processing workflow and ingests Main Methodology
-    measures into the data model.
+    Takes a parquet file output from the processing workflow and ingests Main
+    Methodology measures into the data model.
     """
     click.secho("Ingesting Main Methodology measures", bold=True)
     try:
-        click.echo("Loading Floor Height JSON...")
-        json_data = json.load(input_json)
-        method_df = pd.DataFrame(json_data["buildings"])
+        click.echo("Loading Floor Height parquet...")
+        method_df = pd.read_parquet(input_file)
     except Exception as error:
-        raise click.exceptions.FileError(input_json.name, error)
+        raise click.exceptions.FileError(input_file, error)
 
-    if accuracy_field is not None and accuracy_field not in method_df.columns:
-        raise click.exceptions.BadParameter(
-            f"Field '{accuracy_field}' not found in input JSON file"
-        )
-    if accuracy_field is not None:
-        method_df = method_df.rename(columns={accuracy_field: "accuracy_measure"})
-    else:
-        method_df["accuracy_measure"] = None
-
-    method_df = method_df.rename(
-        columns={
-            "id": "building_id",
-            ffh_field: "height",
-        }
+    # Drop original geometry, set to location of door
+    method_df = method_df.drop(columns=["geometry"])
+    method_gdf = gpd.GeoDataFrame(
+        method_df,
+        geometry=gpd.points_from_xy(
+            method_df["door_lon"], method_df["door_lat"], crs="EPSG:7844"
+        ),
     )
+    method_gdf = method_gdf.rename_geometry("location")
 
-    method_df = method_df[~method_df["height"].isna()]
-    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
-    method_df["storey"] = 0
+    method_gdf["storey"] = 0
 
     # Cast building_id strings to UUIDs
-    method_df["building_id"] = method_df["building_id"].apply(uuid.UUID)
+    method_gdf["building_id"] = method_gdf["building_id"].apply(uuid.UUID)
 
     # Make method input column names lower case and remove special characters
-    method_df.columns = method_df.columns.str.lower().str.replace(
+    method_gdf.columns = method_gdf.columns.str.lower().str.replace(
         r"\W+", "", regex=True
     )
 
-    # Create UUID index
-    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
-    method_df = method_df.set_index(["id"])
+    # Deserialise bboxes as a list of dicts
+    method_gdf["bboxes"] = method_gdf["bboxes"].apply(lambda row: json.loads(row))
 
     # Create aux_info json column
-    aux_info_df = method_df.drop(
-        columns=["building_id", "height", "storey", "accuracy_measure"], axis=1
+    aux_info_df = method_gdf.drop(
+        columns=[
+            "building_id",
+            "storey",
+            "location",
+        ],
+        axis=1,
     ).copy()
     aux_info_df = aux_info_df.replace(np.nan, None)
-    method_df["aux_info"] = aux_info_df.apply(
+    method_gdf["aux_info"] = aux_info_df.apply(
         lambda row: json.dumps(row.to_dict()), axis=1
     )
-    method_df = method_df.drop(columns=aux_info_df.columns, axis=1)
+    # method_gdf = method_gdf.drop(columns=aux_info_df.columns, axis=1)
 
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         click.echo("Inserting records into floor_measure table...")
 
-        method_id = etl.get_or_create_method_id(session, method_name)
-        method_dataset_id = etl.get_or_create_dataset_id(
-            session, dataset_name, dataset_desc, dataset_src
-        )
+        methods = {
+            "ffh1": "Main Method - FFH1",
+            "ffh2": "Main Method - FFH2",
+            "ffh3": "Main Method - FFH3",
+        }
 
-        method_df["method_id"] = method_id
+        # Iterate methods from the processing output and ingest measures
+        for method_field, method_name in methods.items():
+            # Filter method_gdf for the current method
+            method_gdf_filtered = method_gdf[method_gdf[method_field].notna()].copy()
+            method_gdf_filtered["height"] = method_gdf_filtered[method_field]
 
-        try:
-            method_df.to_sql(
-                "floor_measure",
-                conn,
-                schema="public",
-                if_exists="append",
-                index=True,
-                dtype={
-                    "id": UUID,
-                    "building_id": UUID,
-                    "method_id": UUID,
-                    "height": Numeric,
-                    "aux_info": JSON,
-                },
-                method=etl.psql_insert_copy,
-            )
-        except psycopg2.errors.ForeignKeyViolation:
-            raise click.UsageError(
-                "The ingest-main-method-measures command can only be used after "
-                "ingesting buildings, also ensure that the building IDs match those "
-                "in the input JSON."
+            if method_gdf_filtered.empty:
+                click.echo(f"No records found for {method_field}, skipping...")
+                continue
+
+            method_id = etl.get_or_create_method_id(session, method_name)
+            method_dataset_id = etl.get_or_create_dataset_id(
+                session, dataset_name, dataset_desc, dataset_src
             )
 
-        etl.insert_floor_measure_dataset_association(
-            session, method_dataset_id, method_df.index.tolist()
-        )
+            method_gdf_filtered["method_id"] = method_id
+
+            # Create UUID index
+            method_gdf_filtered["id"] = [
+                uuid.uuid4() for _ in range(len(method_gdf_filtered.index))
+            ]
+            method_gdf_filtered = method_gdf_filtered.set_index(["id"])
+
+            try:
+                method_gdf_filtered.drop(
+                    columns=aux_info_df.columns, axis=1
+                ).to_postgis(
+                    "floor_measure",
+                    conn,
+                    schema="public",
+                    if_exists="append",
+                    index=True,
+                    dtype={
+                        "id": UUID,
+                        "building_id": UUID,
+                        "method_id": UUID,
+                        "height": Numeric,
+                        "aux_info": JSON,
+                    },
+                )
+            except psycopg2.errors.ForeignKeyViolation:
+                raise click.UsageError(
+                    "The ingest-main-method-measures command can only be used after "
+                    "ingesting buildings, also ensure that the building IDs match those "
+                    "in the input JSON."
+                )
+
+            etl.insert_floor_measure_dataset_association(
+                session, method_dataset_id, method_gdf_filtered.index.tolist()
+            )
 
     click.echo("Main methodology ingestion complete")
 
 
 @click.command()
-@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to JSON containing gap fill measures.")  # fmt: skip
-@click.option("--ffh-field", type=str, default="gap_fill_ffh", help="Name of the first floor height field in the input JSON.")  # fmt: skip
-@click.option("--accuracy-field", type=str, default="gap_fill_confidence_score", help="Name of the first floor height accuracy field.")  # fmt: skip
-@click.option("--method-name",  type=str, default="Gap Fill", help="Name of the floor measure method.")  # fmt: skip
+@click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to parquet file containing gap fill measures.")  # fmt: skip
+@click.option("--ffh-field", type=str, default="ensemble_ffh", help="Name of the first floor height field in the input parquet.")  # fmt: skip
+@click.option("--accuracy-field", type=str, default="ensemble_confidence", help="Name of the first floor height accuracy field.")  # fmt: skip
+@click.option("--method-name",  type=str, default="Main Method - Ensemble", help="Name of the floor measure method.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-desc", type=str, default="Outputs from the FFH processing model", show_default=True, help="Name of the floor measure dataset.")  # fmt: skip
 @click.option("--dataset-src", type=str, default="FrontierSI", show_default=True, help="Source of the floor measure dataset.")  # fmt: skip
 def ingest_gap_fill_measures(
-    input_json: click.File,
+    input_file: click.Path,
     ffh_field: str,
     accuracy_field: str,
     method_name: str,
@@ -906,37 +920,34 @@ def ingest_gap_fill_measures(
     dataset_desc: str,
     dataset_src: str,
 ):
-    """Ingest gap fill measures from floor height JSON
+    """Ingest gap fill measures from floor height parquet
 
-    Takes a JSON file output from the processing workflow and ingests Gap Fill measures
-    into the data model.
+    Takes a parquet file output from the processing workflow and ingests Gap Fill
+    (ensemble) measures into the data model.
     """
     click.secho("Ingesting Gap Fill measures", bold=True)
     try:
-        click.echo("Loading Floor Height JSON...")
-        json_data = json.load(input_json)
-        method_df = pd.DataFrame(json_data["buildings"])
+        click.echo("Loading Floor Height parquet...")
+        method_df = pd.read_parquet(input_file)
     except Exception as error:
-        raise click.exceptions.FileError(input_json.name, error)
+        raise click.exceptions.FileError(input_file, error)
 
+    if ffh_field not in method_df.columns:
+        raise click.exceptions.BadParameter(
+            f"Field '{ffh_field}' not found in input parquet file"
+        )
     if accuracy_field is not None and accuracy_field not in method_df.columns:
         raise click.exceptions.BadParameter(
-            f"Field '{accuracy_field}' not found in input JSON file"
+            f"Field '{accuracy_field}' not found in input parquet file"
         )
     if accuracy_field is not None:
         method_df = method_df.rename(columns={accuracy_field: "accuracy_measure"})
     else:
         method_df["accuracy_measure"] = None
 
-    method_df = method_df.rename(
-        columns={
-            "id": "building_id",
-            ffh_field: "height",
-        }
-    )
-
+    method_df = method_df.drop(columns=["geometry"])
+    method_df["height"] = method_df[ffh_field]
     method_df = method_df[~method_df["height"].isna()]
-    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
     method_df["storey"] = 0
 
     # Cast building_id strings to UUIDs
@@ -947,13 +958,18 @@ def ingest_gap_fill_measures(
         r"\W+", "", regex=True
     )
 
-    # Create UUID index
-    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
-    method_df = method_df.set_index(["id"])
+    # Deserialise bboxes as a list of dicts
+    method_df["bboxes"] = method_df["bboxes"].apply(lambda row: json.loads(row))
 
     # Create aux_info json column
     aux_info_df = method_df.drop(
-        columns=["building_id", "height", "storey", "accuracy_measure"], axis=1
+        columns=[
+            "building_id",
+            "height",
+            "storey",
+            "accuracy_measure",
+        ],
+        axis=1,
     ).copy()
     aux_info_df = aux_info_df.replace(np.nan, None)
     method_df["aux_info"] = aux_info_df.apply(
@@ -965,6 +981,10 @@ def ingest_gap_fill_measures(
     with session.begin():
         conn = session.connection()
         click.echo("Inserting records into floor_measure table...")
+
+        # Create UUID index
+        method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
+        method_df = method_df.set_index(["id"])
 
         method_id = etl.get_or_create_method_id(session, method_name)
         method_dataset_id = etl.get_or_create_dataset_id(
@@ -993,23 +1013,20 @@ def ingest_gap_fill_measures(
             raise click.UsageError(
                 "The ingest-gap-fill-measures command can only be used after "
                 "ingesting buildings, also ensure that the building IDs match those "
-                "in the input JSON."
+                "in the input parquet."
             )
 
         etl.insert_floor_measure_dataset_association(
             session, method_dataset_id, method_df.index.tolist()
         )
 
-    click.echo("Gap fill ingestion complete")
+    click.echo("Gap Fill ingestion complete")
 
 
 @click.command()
 @click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
-@click.option("--method-name", type=str, default="Main Method", help="Name of the floor measure method to attach images to.")  # fmt: skip
-def ingest_main_method_images(
-    pano_path: click.Path, lidar_path: click.Path, method_name: str
-):
+def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
     """Ingest main methodology images
 
     Takes a path to Panorama and/or LIDAR images ingests them into the data model.
@@ -1020,8 +1037,11 @@ def ingest_main_method_images(
         )
 
     def image_to_bytearray(image_path):
-        with open(image_path, "rb") as f:
-            return f.read()
+        try:
+            with open(image_path, "rb") as f:
+                return f.read()
+        except FileNotFoundError as error:
+            click.echo(f"Skipping image: {error}")
 
     click.secho("Ingesting Main Methodology images", bold=True)
 
@@ -1031,7 +1051,7 @@ def ingest_main_method_images(
         click.echo("Selecting records from floor_measure table...")
 
         # Get the image names for the specified method
-        measure_df = etl.get_measure_image_names(conn, method_name)
+        measure_df = etl.get_measure_image_names(conn)
 
         if measure_df.empty:
             raise click.UsageError(
@@ -1044,28 +1064,24 @@ def ingest_main_method_images(
                 click.echo(f"Ingesting {image_type} images...")
 
                 filename_field = (
-                    "pano_filename" if image_type == "panorama" else "lidar_filename"
+                    "clip_path" if image_type == "panorama" else "lidar_clip_path"
                 )
 
-                image_df = measure_df[
-                    ["best_view_pano_filename", filename_field]
-                ].copy()
+                image_df = measure_df[["id", filename_field]].copy()
+                image_df = image_df.rename(columns={"id": "floor_measure_id"})
 
-                # Get image filenames by globbing the image_path
-                image_df[filename_field] = image_df[filename_field].apply(
-                    lambda filename: list(
-                        Path(image_path).glob(f"{Path(filename).stem}*")
+                # Get image filepaths
+                if image_type == "panorama":
+                    image_df[filename_field] = image_df[filename_field].apply(
+                        lambda filename: Path(image_path) / Path(filename).name
                     )
-                )
-
-                if image_df[filename_field].apply(len).sum() == 0:
-                    raise click.UsageError(
-                        f"No {image_type} images found in the path '{image_path}'."
+                else:
+                    # TODO Set lidar_clip_path to full path
+                    image_df[filename_field] = image_df[filename_field].apply(
+                        lambda filename: list(
+                            (Path(image_path) / Path(filename).name).glob("*")
+                        )[0]
                     )
-
-                # Normalise so that each row contains one filepath
-                image_df = image_df.explode(filename_field)
-                image_df = image_df[image_df[filename_field].notna()]
 
                 # Add ID and additional fields
                 image_df["id"] = [uuid.uuid4() for _ in range(len(image_df.index))]
@@ -1075,23 +1091,15 @@ def ingest_main_method_images(
                 )
                 image_df["type"] = image_type
 
-                # Join the floor_measure_ids
-                image_df = image_df.join(
-                    measure_df[["id", "best_view_pano_filename"]].set_index(
-                        "best_view_pano_filename"
-                    ),
-                    on="best_view_pano_filename",
-                )
-                image_df = image_df.rename(columns={"id": "floor_measure_id"})
-
                 # Create byte arrays of the images
                 image_df["image_data"] = image_df[filename_field].apply(
                     lambda filename: image_to_bytearray(filename)
                 )
 
+                image_df = image_df[image_df["image_data"].notna()]
+
                 image_df = image_df.drop(
                     columns=[
-                        "best_view_pano_filename",
                         filename_field,
                     ],
                     axis=1,

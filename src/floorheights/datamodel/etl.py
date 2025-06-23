@@ -877,6 +877,7 @@ def build_floor_measure_query(
             floor_measure_table, ["id", ffh_field, accuracy_field, "geometry"]
         ).label("aux_info"),
         building_id_field,
+        floor_measure_table.c.location,
     ]
 
     if join_by == "gnaf_id":
@@ -891,12 +892,12 @@ def build_floor_measure_query(
             )
         )
     elif join_by == "intersects":
-        select_query = join_by_contains(select_fields, floor_measure_table.c.geometry)
+        select_query = join_by_contains(select_fields, floor_measure_table.c.location)
     elif join_by == "cadastre":
         select_query = join_by_cadastre(
             select_fields,
             floor_measure_table,
-            floor_measure_table.c.geometry,
+            floor_measure_table.c.location,
             cadastre,
             cadastre.c.geometry,
         ).where(
@@ -914,7 +915,7 @@ def build_floor_measure_query(
         select_query = join_by_knn(
             lateral_fields,
             floor_measure_table,
-            floor_measure_table.c.geometry,
+            floor_measure_table.c.location,
             additional_select_fields=select_fields,
         )
     else:
@@ -962,6 +963,7 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
                 "method_id",
                 "aux_info",
                 "building_id",
+                "location",
             ],
             select_query,
         )
@@ -1001,7 +1003,7 @@ def insert_floor_measure_dataset_association(
     )
 
 
-def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
+def get_measure_image_names(conn: Connection) -> pd.DataFrame:
     """
     Get FloorMeasure IDs and image names from the aux_info field.
 
@@ -1009,8 +1011,6 @@ def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
     ----------
     conn : Connection
         SQLAlchemy connection object.
-    method_name : str
-        Name of the method to get image names from.
 
     Returns
     -------
@@ -1026,23 +1026,26 @@ def get_measure_image_names(conn: Connection, method_name: str) -> pd.DataFrame:
         .select_from(FloorMeasure)
         .join(Building)
         .join(Method)
-        .filter(Method.name == method_name)
+        .filter(
+            Method.name.in_(
+                ["Main Method - FFH1", "Main Method - FFH2", "Main Method - FFH3"]
+            )
+        )
     )
     measure_df = pd.read_sql(select_query, conn)
     measure_df = pd.concat(
         [measure_df, pd.json_normalize(measure_df.pop("aux_info"))], axis=1
     )
-    measure_df = measure_df.drop_duplicates(subset=["best_view_pano_filename"])
 
-    measure_df["pano_filename"] = measure_df.best_view_pano_filename.astype(str).apply(
+    if measure_df.empty:
+        return measure_df
+
+    measure_df["pano_filename"] = measure_df.clip_path.astype(str).apply(
         lambda x: Path(x).stem
     )
 
-    measure_df["lidar_filename"] = (
-        measure_df.building_id.astype(str)
-        + "_"
-        + measure_df.gnaf_id.astype(str)
-        + "_3d_point_cloud"
+    measure_df["lidar_filename"] = measure_df.lidar_clip_path.astype(str).apply(
+        lambda x: Path(x).stem
     )
 
     return measure_df

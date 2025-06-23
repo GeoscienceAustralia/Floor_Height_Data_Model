@@ -106,6 +106,7 @@ class FloorMeasure(Base):
     height = Column(Float, nullable=False)
     accuracy_measure = Column(Float, nullable=True)
     aux_info = Column(JSON, nullable=True)
+    location = Column(Geometry(geometry_type="POINT", srid=7844), nullable=True)
 
     # Foreign key to Building
     building_id = Column(UUID(as_uuid=True), ForeignKey("building.id"), nullable=False)
