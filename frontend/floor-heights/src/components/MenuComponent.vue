@@ -42,7 +42,7 @@ const fetchGeoJSON = async () => {
     // Fetch GeoJSON file
     const response = await fetch(`api/geojson/`);
     const geojson = await response.json();
-    const blob = new Blob([JSON.stringify(geojson)], {
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
