@@ -852,7 +852,6 @@ def ingest_main_method_measures(
     method_gdf["aux_info"] = aux_info_df.apply(
         lambda row: json.dumps(row.to_dict()), axis=1
     )
-    # method_gdf = method_gdf.drop(columns=aux_info_df.columns, axis=1)
 
     session = SessionLocal()
     with session.begin():
