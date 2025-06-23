@@ -40,6 +40,7 @@ Table floor_measure {
 	id uuid [ pk, not null, unique ]
 	storey integer [ not null ]
 	height decimal [ not null ]
+	measure_range numrange
 	confidence decimal
 	building_id uuid [ not null ]
 	method_id uuid [ not null ]
