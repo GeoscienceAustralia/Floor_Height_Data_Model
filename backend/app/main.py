@@ -438,7 +438,7 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
     "/api/image-ids/{building_id}",
     response_model=list[uuid.UUID],
 )
-def get_pano_image_ids(
+def get_image_ids(
     building_id: str,
     type: str,
     db: sqlalchemy.orm.Session = Depends(get_db),
@@ -457,7 +457,7 @@ def get_pano_image_ids(
     query = (
         select(FloorMeasureImage.id)
         .select_from(FloorMeasureImage)
-        .join(FloorMeasure)
+        .join(FloorMeasure, FloorMeasureImage.floor_measures)
         .join(Building)
         .filter(Building.id == uuid_id)
         .filter(FloorMeasureImage.type == type)
