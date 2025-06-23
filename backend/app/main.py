@@ -573,7 +573,7 @@ def get_image(
             FloorMeasureImage.image_data, FloorMeasureImage.type, FloorMeasure.aux_info
         )
         .select_from(FloorMeasureImage)
-        .join(FloorMeasure)
+        .join(FloorMeasure, FloorMeasureImage.floor_measures)
         .filter(FloorMeasureImage.id == uuid_id)
     )
     result = db.execute(query).fetchone()
