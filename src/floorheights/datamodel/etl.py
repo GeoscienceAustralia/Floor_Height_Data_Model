@@ -13,6 +13,7 @@ import rasterio
 from geoalchemy2 import Geography, Geometry
 from pyproj import CRS
 from rasterio.mask import mask
+from shapely.geometry.base import BaseGeometry
 from sqlalchemy import (
     BinaryExpression,
     Column,
@@ -47,10 +48,9 @@ def generate_uuid(field):
     """
     Generates a UUID based on the input field using the UUID version 5 algorithm.
 
-    If the field is "geometry" and contains a valid geometry object, the UUID is
-    generated using the hexadecimal representation of the geometry's Well-Known Binary
-    (WKB). If the field is not "geometry", the UUID is generated using the string
-    representation of the field.
+    If the field contains a valid geometry object, the UUID is generated using the
+    hexadecimal representation of the geometry's Well-Known Binary (WKB). If the field
+    is not geometry, the UUID is generated using the string representation of the field.
 
     Parameters
     ----------
@@ -62,10 +62,10 @@ def generate_uuid(field):
     uuid.UUID or None
         The generated UUID. Returns None if the geometry field is None.
     """
-    if field == "geometry":
-        if field.geometry is None:
+    if isinstance(field, BaseGeometry):
+        if field is None:
             return None
-        value = field.geometry.wkb.hex()
+        value = field.wkb.hex()
     else:
         value = str(field)
     return uuid.uuid5(uuid.NAMESPACE_OID, value)
