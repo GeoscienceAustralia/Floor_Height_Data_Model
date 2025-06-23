@@ -65,6 +65,11 @@ def ingest_address_points(input_address: click.Path, chunksize: int):
     )
     address = address.rename_geometry("location")
 
+    # Generate UUIDs based on the GNAF IDs
+    click.echo("Generating UUIDs...")
+    address["id"] = address["gnaf_id"].apply(etl.generate_uuid)
+    address = address.set_index("id")
+
     click.echo("Copying to PostgreSQL...")
     session = SessionLocal()
     with session.begin():
@@ -74,8 +79,9 @@ def ingest_address_points(input_address: click.Path, chunksize: int):
             conn,
             schema="public",
             if_exists="append",
-            index=False,
+            index=True,
             chunksize=chunksize,
+            dtype={"id": UUID},
         )
         click.echo("Address ingestion complete")
 
@@ -214,6 +220,15 @@ def ingest_buildings(
     buildings = buildings.to_crs(7844)  # Transform back to GDA2020
     buildings = buildings.rename_geometry("outline")
 
+    # Drop duplicate geometries
+    buildings["outline"] = buildings.normalize()
+    buildings = buildings.drop_duplicates(subset="outline")
+
+    # Generate UUIDs based on the building geometries
+    click.echo("Generating UUIDs...")
+    buildings["id"] = buildings["outline"].apply(etl.generate_uuid)
+    buildings = buildings.set_index("id")
+
     click.echo("Copying to PostgreSQL...")
     session = SessionLocal()
     with session.begin():
@@ -223,8 +238,9 @@ def ingest_buildings(
             conn,
             schema="public",
             if_exists="append",
-            index=False,
+            index=True,
             chunksize=chunksize,
+            dtype={"id": UUID},
         )
 
         if remove_overlapping:
@@ -1083,9 +1099,7 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                         )[0]
                     )
 
-                # Add ID and additional fields
-                image_df["id"] = [uuid.uuid4() for _ in range(len(image_df.index))]
-                image_df = image_df.set_index(["id"], drop=True)
+                # Add additional fields
                 image_df["filename"] = image_df[filename_field].apply(
                     lambda path: Path(path).name
                 )
@@ -1110,9 +1124,8 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                     conn,
                     schema="public",
                     if_exists="append",
-                    index=True,
+                    index=False,
                     dtype={
-                        "id": UUID,
                         "image_data": LargeBinary,
                         "floor_measure_id": UUID,
                         "type": String,

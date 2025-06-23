@@ -13,6 +13,7 @@ import rasterio
 from geoalchemy2 import Geography, Geometry
 from pyproj import CRS
 from rasterio.mask import mask
+from shapely.geometry.base import BaseGeometry
 from sqlalchemy import (
     BinaryExpression,
     Column,
@@ -41,6 +42,33 @@ from floorheights.datamodel.models import (
     address_point_building_association,
     floor_measure_dataset_association,
 )
+
+
+def generate_uuid(field):
+    """
+    Generates a UUID based on the input field using the UUID version 5 algorithm.
+
+    If the field contains a valid geometry object, the UUID is generated using the
+    hexadecimal representation of the geometry's Well-Known Binary (WKB). If the field
+    is not geometry, the UUID is generated using the string representation of the field.
+
+    Parameters
+    ----------
+    field : object
+        The input field.
+
+    Returns
+    -------
+    uuid.UUID or None
+        The generated UUID. Returns None if the geometry field is None.
+    """
+    if isinstance(field, BaseGeometry):
+        if field is None:
+            return None
+        value = field.wkb.hex()
+    else:
+        value = str(field)
+    return uuid.uuid5(uuid.NAMESPACE_OID, value)
 
 
 def read_ogr_file(input_file: str, **kwargs) -> gpd.GeoDataFrame:
@@ -1021,10 +1049,9 @@ def get_measure_image_names(conn: Connection) -> pd.DataFrame:
         select(
             FloorMeasure.id,
             FloorMeasure.aux_info,
-            Building.id.label("building_id"),
+            FloorMeasure.building_id,
         )
         .select_from(FloorMeasure)
-        .join(Building)
         .join(Method)
         .filter(
             Method.name.in_(

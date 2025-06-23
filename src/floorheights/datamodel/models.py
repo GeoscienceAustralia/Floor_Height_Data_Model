@@ -101,7 +101,12 @@ class Building(Base):
 
 class FloorMeasure(Base):
     __tablename__ = "floor_measure"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default="gen_random_uuid()",
+    )
     storey = Column(Integer, nullable=False)
     height = Column(Float, nullable=False)
     accuracy_measure = Column(Float, nullable=True)
@@ -128,7 +133,12 @@ class FloorMeasure(Base):
 
 class FloorMeasureImage(Base):
     __tablename__ = "floor_measure_image"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default="gen_random_uuid()",
+    )
     filename = Column(String, nullable=False)
     image_data = Column(LargeBinary, nullable=False)
     type = Column(String, nullable=True)
@@ -143,13 +153,23 @@ class FloorMeasureImage(Base):
 
 class Method(Base):
     __tablename__ = "method"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default="gen_random_uuid()",
+    )
     name = Column(String, nullable=False)
 
 
 class Dataset(Base):
     __tablename__ = "dataset"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default="gen_random_uuid()",
+    )
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     source = Column(String, nullable=True)
