@@ -1099,6 +1099,8 @@ def build_denormalised_query() -> Select:
             FloorMeasure.storey,
             FloorMeasure.height.label("floor_height_m"),
             FloorMeasure.confidence,
+            func.lower(FloorMeasure.measure_range).label("measure_lower"),
+            func.upper(FloorMeasure.measure_range).label("measure_upper"),
             FloorMeasure.aux_info,
             Building.land_use_zone,
             Building.outline,

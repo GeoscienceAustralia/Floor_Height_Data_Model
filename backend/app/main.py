@@ -29,6 +29,7 @@ dictConfig(LogConfig().dict())
 logger = logging.getLogger("floorheights")
 
 from app.schemas import FloorMeasureResponse, GraduatedLegendResponse
+from floorheights.datamodel.etl import build_denormalised_query
 from floorheights.datamodel.models import (
     AddressPoint,
     Building,
@@ -371,24 +372,27 @@ def list_datasets(
 def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
     try:
         query = (
-            db.query(
-                AddressPoint.gnaf_id,
-                AddressPoint.address.label("gnaf_address"),
-                Building.min_height_ahd.label("min_building_height_ahd"),
-                Building.max_height_ahd.label("max_building_height_ahd"),
-                Dataset.name.label("dataset"),
-                Method.name.label("method"),
-                FloorMeasure.storey,
-                FloorMeasure.height.label("floor_height_m"),
-                FloorMeasure.confidence,
-                FloorMeasure.aux_info,
-                geoalchemy2.functions.ST_AsGeoJSON(Building.outline).label("geometry"),
+            db.execute(
+                build_denormalised_query().with_only_columns(
+                    Building.id.label("building_id"),
+                    AddressPoint.gnaf_id,
+                    AddressPoint.address.label("gnaf_address"),
+                    Building.min_height_ahd.label("min_building_height_ahd"),
+                    Building.max_height_ahd.label("max_building_height_ahd"),
+                    Dataset.name.label("dataset"),
+                    Method.name.label("method"),
+                    FloorMeasure.storey,
+                    FloorMeasure.height.label("floor_height_m"),
+                    FloorMeasure.confidence,
+                    func.lower(FloorMeasure.measure_range).label("measure_lower"),
+                    func.upper(FloorMeasure.measure_range).label("measure_upper"),
+                    FloorMeasure.aux_info,
+                    Building.land_use_zone,
+                    geoalchemy2.functions.ST_AsGeoJSON(Building.outline).label(
+                        "geometry"
+                    ),
+                )
             )
-            .select_from(FloorMeasure)
-            .join(Method, FloorMeasure.method)
-            .join(Dataset, FloorMeasure.datasets)
-            .join(Building)
-            .join(AddressPoint, Building.address_points)
         ).yield_per(1000)
 
         data_returned = False
@@ -398,14 +402,22 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
                 "type": "Feature",
                 "geometry": json.loads(feature.geometry),
                 "properties": {
+                    "building_id": str(feature.building_id),
                     "gnaf_id": feature.gnaf_id,
                     "address": feature.gnaf_address,
                     "min_building_height_ahd": feature.min_building_height_ahd,
                     "max_building_height_ahd": feature.max_building_height_ahd,
+                    "land_use_zone": feature.land_use_zone,
                     "dataset": feature.dataset,
                     "method": feature.method,
                     "storey": feature.storey,
                     "floor_height_m": feature.floor_height_m,
+                    "measure_lower": float(feature.measure_lower)
+                    if feature.measure_lower
+                    else None,
+                    "measure_upper": float(feature.measure_upper)
+                    if feature.measure_upper
+                    else None,
                     "confidence": feature.confidence,
                     "aux_info": feature.aux_info,
                 },
