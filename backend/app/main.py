@@ -215,7 +215,7 @@ def get_floor_height_data(
             id=str(fm_db.id),
             storey=fm_db.storey,
             height=fm_db.height,
-            accuracy_measure=fm_db.accuracy_measure,
+            confidence=fm_db.confidence,
             aux_info=fm_db.aux_info,
             method=fm_db.method.name,
             datasets=datasets,
@@ -380,7 +380,7 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
                 Method.name.label("method"),
                 FloorMeasure.storey,
                 FloorMeasure.height.label("floor_height_m"),
-                FloorMeasure.accuracy_measure.label("accuracy"),
+                FloorMeasure.confidence,
                 FloorMeasure.aux_info,
                 geoalchemy2.functions.ST_AsGeoJSON(Building.outline).label("geometry"),
             )
@@ -406,7 +406,7 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
                     "method": feature.method,
                     "storey": feature.storey,
                     "floor_height_m": feature.floor_height_m,
-                    "accuracy": feature.accuracy,
+                    "confidence": feature.confidence,
                     "aux_info": feature.aux_info,
                 },
             }

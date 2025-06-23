@@ -109,7 +109,7 @@ class FloorMeasure(Base):
     )
     storey = Column(Integer, nullable=False)
     height = Column(Float, nullable=False)
-    accuracy_measure = Column(Float, nullable=True)
+    confidence = Column(Float, nullable=True)
     aux_info = Column(JSON, nullable=True)
     location = Column(Geometry(geometry_type="POINT", srid=7844), nullable=True)
 

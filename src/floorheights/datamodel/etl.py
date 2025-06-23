@@ -851,7 +851,7 @@ def build_floor_measure_query(
     floor_measure_table: Table,
     ffh_field: str,
     method_id: uuid.UUID,
-    accuracy_field: str,
+    confidence_field: str,
     storey: int = None,
     join_by: Literal["gnaf_id", "intersects", "cadastre", "knn"] = None,
     gnaf_id_col: str = None,
@@ -870,8 +870,8 @@ def build_floor_measure_query(
         Field name for floor height.
     method_id : uuid.UUID
         ID of the method used for floor height measurement.
-    accuracy_field : str
-        Field name for accuracy measure.
+    confidence_field : str
+        Field name for confidence measure.
     storey : int, optional
         Storey number, by default None.
     join_by : {'gnaf_id', 'intersects', 'cadastre', 'knn'}, optional
@@ -899,10 +899,10 @@ def build_floor_measure_query(
         floor_measure_table.c.id.label("id"),
         literal(storey).label("storey"),
         floor_measure_table.c[ffh_field].label("height"),
-        floor_measure_table.c[accuracy_field].label("accuracy_measure"),
+        floor_measure_table.c[confidence_field].label("confidence"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
-            floor_measure_table, ["id", ffh_field, accuracy_field, "geometry"]
+            floor_measure_table, ["id", ffh_field, confidence_field, "geometry"]
         ).label("aux_info"),
         building_id_field,
         floor_measure_table.c.location,
@@ -987,7 +987,7 @@ def insert_floor_measure(session: Session, select_query: Select) -> list:
                 "id",
                 "storey",
                 "height",
-                "accuracy_measure",
+                "confidence",
                 "method_id",
                 "aux_info",
                 "building_id",
@@ -1098,7 +1098,7 @@ def build_denormalised_query() -> Select:
             Method.name.label("method"),
             FloorMeasure.storey,
             FloorMeasure.height.label("floor_height_m"),
-            FloorMeasure.accuracy_measure.label("accuracy"),
+            FloorMeasure.confidence,
             FloorMeasure.aux_info,
             Building.land_use_zone,
             Building.outline,
