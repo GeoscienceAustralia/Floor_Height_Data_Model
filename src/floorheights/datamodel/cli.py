@@ -947,19 +947,20 @@ def ingest_gap_fill_measures(
     except Exception as error:
         raise click.exceptions.FileError(input_file, error)
 
-    if confidence_field is not None and confidence_field not in method_df.columns:
+    if ffh_field not in method_df.columns:
+        raise click.exceptions.BadParameter(
+            f"Field '{ffh_field}' not found in input parquet file"
+        )
+    if confidence_field not in method_df.columns:
         raise click.exceptions.BadParameter(
             f"Field '{confidence_field}' not found in input parquet file"
         )
-    if confidence_field is not None:
-        method_df = method_df.rename(columns={confidence_field: "confidence"})
-    else:
-        method_df["confidence"] = None
 
     method_df = method_df.drop(columns=["geometry"])
     method_df["height"] = method_df[ffh_field]
     method_df = method_df[~method_df["height"].isna()]
     method_df["storey"] = 0
+    method_df = method_df.rename(columns={confidence_field: "confidence"})
 
     # Cast building_id strings to UUIDs
     method_df["building_id"] = method_df["building_id"].apply(uuid.UUID)
