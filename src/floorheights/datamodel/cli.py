@@ -222,7 +222,7 @@ def ingest_buildings(
 
     # Drop duplicate geometries
     buildings["outline"] = buildings.normalize()
-    buildings.drop_duplicates(subset="outline")
+    buildings = buildings.drop_duplicates(subset="outline")
 
     # Generate UUIDs based on the building geometries
     click.echo("Generating UUIDs...")
