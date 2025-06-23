@@ -240,6 +240,18 @@ def list_methods(
 
 
 @app.get(
+    "/api/datasets/",
+    response_model=list[str],
+)
+def list_datasets(
+    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
+):
+    if Authentication:
+        pass
+    return [r[0] for r in db.query(Dataset.name).distinct().order_by(Dataset.name)]
+
+
+@app.get(
     "/api/legend-graduated-values/",
     response_model=GraduatedLegendResponse,
 )
@@ -355,18 +367,6 @@ def get_legend_categorised_values(
     )
 
     return sorted_result_list
-
-
-@app.get(
-    "/api/datasets/",
-    response_model=list[str],
-)
-def list_datasets(
-    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
-):
-    if Authentication:
-        pass
-    return [r[0] for r in db.query(Dataset.name).distinct().order_by(Dataset.name)]
 
 
 def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
