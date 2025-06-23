@@ -902,7 +902,7 @@ def build_floor_measure_query(
         floor_measure_table.c[confidence_field].label("confidence"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
-            floor_measure_table, ["id", ffh_field, confidence_field, "geometry"]
+            floor_measure_table, ["id", ffh_field, confidence_field, "location"]
         ).label("aux_info"),
         building_id_field,
         floor_measure_table.c.location,
