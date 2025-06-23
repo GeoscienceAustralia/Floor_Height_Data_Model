@@ -461,7 +461,7 @@ def get_image_ids(
         .join(Building)
         .filter(Building.id == uuid_id)
         .filter(FloorMeasureImage.type == type)
-    )
+    ).distinct()
 
     results = db.execute(query).all()
 
