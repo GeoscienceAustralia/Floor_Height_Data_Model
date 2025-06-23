@@ -51,6 +51,24 @@ floor_measure_dataset_association = Table(
 )
 
 
+floor_measure_floor_measure_image_association = Table(
+    "floor_measure_floor_measure_image_association",
+    Base.metadata,
+    Column(
+        "floor_measure_id",
+        UUID(as_uuid=True),
+        ForeignKey("floor_measure.id"),
+        primary_key=True,
+    ),
+    Column(
+        "floor_measure_image_id",
+        UUID(as_uuid=True),
+        ForeignKey("floor_measure_image.id"),
+        primary_key=True,
+    ),
+)
+
+
 class AddressPoint(Base):
     __tablename__ = "address_point"
     id = Column(
@@ -132,6 +150,13 @@ class FloorMeasure(Base):
         back_populates="floor_measures",
     )
 
+    # Many-to-many relationship to FloorMeasureImage
+    floor_measure_images = relationship(
+        "FloorMeasureImage",
+        secondary=floor_measure_floor_measure_image_association,
+        back_populates="floor_measures",
+    )
+
 
 class FloorMeasureImage(Base):
     __tablename__ = "floor_measure_image"
@@ -145,12 +170,12 @@ class FloorMeasureImage(Base):
     image_data = Column(LargeBinary, nullable=False)
     type = Column(String, nullable=True)
 
-    # Foreign key to FloorMeasure
-    floor_measure_id = Column(
-        UUID(as_uuid=True), ForeignKey("floor_measure.id"), nullable=False
+    # Many-to-many relationship to FloorMeasure
+    floor_measures = relationship(
+        "FloorMeasure",
+        secondary=floor_measure_floor_measure_image_association,
+        back_populates="floor_measure_images",
     )
-    # Many-to-one relationship to FloorMeasure
-    floor_measure = relationship("FloorMeasure")
 
 
 class Method(Base):
