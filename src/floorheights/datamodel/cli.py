@@ -1,6 +1,7 @@
 import json
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import boto3
 import click
@@ -1193,108 +1194,62 @@ def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: 
 
 
 @click.command()
-@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to FFH model output JSON.")  # fmt: skip
-@click.option("--s3-uri", required=True, type=str, help="Root S3 URI path containing the images.")  # fmt: skip
-@click.option("--areas", type=click.Choice(["Wagga", "Tweed", "Launceston"], case_sensitive=False), default=["Wagga", "Tweed", "Launceston"], multiple=True, help="The areas to download associated images, option can be used multiple times to download multiple areas.")  # fmt: skip
+@click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to FFH model output parquet file.")  # fmt: skip
+@click.option("--areas", type=click.Choice(["wagga", "tweed", "launceston"], case_sensitive=False), default=["Wagga", "Tweed", "Launceston"], multiple=True, help="The areas to download associated images, option can be used multiple times to download multiple areas.")  # fmt: skip
 @click.option("--type", type=click.Choice(["pano", "lidar"], case_sensitive=False), default=["pano", "lidar"], multiple=True, help="The types of images to download, option can be used multiple times to download multiple types.")  # fmt: skip
 @click.option("-o", "--output-dir", required=True, type=click.Path(file_okay=False, dir_okay=True, writable=True), help="Local directory to save downloaded images, images will be download into sub directories for each image type.")  # fmt: skip
 def download_images_s3(
-    input_json: click.File,
-    s3_uri: str,
+    input_file: click.Path,
     areas: list,
     type: list,
     output_dir: click.Path,
 ):
     """Download main methodology images from S3
 
-    Downloads images from an S3 bucket based on the provided JSON file and saves them to
-    a local directory.
-
-    Requires the S3 URI to be in the format 's3://bucket-name/prefix/', and is the path
-    to the root of each region containing the images.
+    Downloads images from an S3 URIs in the provided parquet file and saves them to a
+    local directory.
 
     AWS credentials must be configured in the environment or via the AWS CLI.
     """
     click.secho("Downloading images from S3", bold=True)
     try:
-        json_data = json.load(input_json)
-        json_df = pd.DataFrame(json_data["buildings"])
+        image_df = pd.read_parquet(input_file)
     except Exception as error:
-        raise click.exceptions.FileError(input_json.name, error)
+        raise click.exceptions.FileError(input_file, error)
 
-    json_df = json_df[~json_df["floor_height_consensus"].isna()]
-    json_df = json_df.drop_duplicates(subset=["building_id", "floor_height_consensus"])
-
-    json_df = json_df[json_df.region.isin(areas)]
+    image_df = image_df[image_df.region.isin(areas)]
 
     s3 = boto3.client("s3")
-    bucket_name, prefix = s3_uri.strip("/").replace("s3://", "").split("/", 1)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for image_type in type:
-        folder = "clips" if image_type == "pano" else "3d_point_clouds"
+        uri_field = "clip_path" if image_type == "pano" else "lidar_clip_path"
         type_output_dir = output_dir / (f"{image_type}_images")
         type_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create image prefixes for panorama images
-        if image_type == "pano":
-            json_df["image_prefixes"] = (
-                json_df.region.astype(str)
-                + "/"
-                + folder
-                + "/"
-                + json_df.building_id.astype(str)
-                + "_"
-                + json_df.gnaf_id.astype(str)
-                + "/"
-                + json_df.best_view_pano_filename.astype(str).apply(
-                    lambda x: Path(x).stem
-                )
-            )
-        # Create image prefixes for lidar images
-        elif image_type == "lidar":
-            json_df["image_prefixes"] = (
-                json_df.region.astype(str)
-                + "/"
-                + folder
-                + "/"
-                + json_df.building_id.astype(str)
-                + "_"
-                + json_df.gnaf_id.astype(str)
-                + "/"
-                + json_df.building_id.astype(str)
-                + "_"
-                + json_df.gnaf_id.astype(str)
-                + "_3d_point_cloud.jpg"
-            )
+        image_df = image_df[~image_df[uri_field].isna()]
 
         with click.progressbar(
-            json_df["image_prefixes"], label=f"Downloading {image_type} images"
+            image_df[uri_field], label=f"Downloading {image_type} images"
         ) as bar:
-            for image_prefix in bar:
-                s3_key_prefix = f"{prefix}/{image_prefix}"
+            for image in bar:
+                # Get bucket name and S3 key from the URI
+                parsed = urlparse(image)
+                bucket_name = parsed.netloc
+                s3_key = parsed.path.lstrip("/")
+
                 try:
-                    response = s3.list_objects_v2(
-                        Bucket=bucket_name, Prefix=s3_key_prefix
-                    )
-                    if "Contents" in response:
-                        for obj in response["Contents"]:
-                            s3_key = obj["Key"]
-                            local_file_path = type_output_dir / Path(s3_key).name
-                            s3.download_file(bucket_name, s3_key, str(local_file_path))
-                    else:
-                        click.echo(
-                            f"Warning: No images found for prefix {s3_key_prefix}",
-                            err=True,
-                        )
+                    # Download the file from S3
+                    local_file_path = type_output_dir / Path(s3_key).name
+                    s3.download_file(bucket_name, s3_key, str(local_file_path))
                 except NoCredentialsError:
                     raise click.UsageError("AWS credentials not found.")
                 except PartialCredentialsError:
                     raise click.UsageError("Incomplete AWS credentials configuration.")
                 except Exception as error:
-                    click.echo(f"Failed to download {s3_key_prefix}: {error}", err=True)
+                    click.echo(f"Failed to download {s3_key}: {error}", err=True)
 
     click.echo("Image download complete")
 
