@@ -1092,6 +1092,8 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
 
                 image_df = measure_df[["id", filename_field]].copy()
                 image_df = image_df.rename(columns={"id": "floor_measure_id"})
+                # Generate UUIDs based on image filenames
+                image_df["id"] = image_df[filename_field].apply(etl.generate_uuid)
 
                 # Get image filepaths
                 if image_type == "panorama":
@@ -1112,17 +1114,28 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                 )
                 image_df["type"] = image_type
 
+                # Create association table dataframe
+                image_assoc_df = (
+                    image_df[["floor_measure_id", "id"]].rename(
+                        columns={"id": "floor_measure_image_id"}
+                    )
+                ).copy()
+
+                # Convert to a list of dictionaries
+                image_assoc_dict = image_assoc_df.to_dict(orient="records")
+
+                # Drop duplicates based on 'id' to ensure only unique images are ingested
+                image_df = image_df.drop_duplicates(subset=["id"])
+                image_df = image_df.set_index("id")
+
                 # Create byte arrays of the images
                 image_df["image_data"] = image_df[filename_field].apply(
                     lambda filename: image_to_bytearray(filename)
                 )
 
                 image_df = image_df[image_df["image_data"].notna()]
-
                 image_df = image_df.drop(
-                    columns=[
-                        filename_field,
-                    ],
+                    columns=[filename_field, "floor_measure_id"],
                     axis=1,
                 )
 
@@ -1131,12 +1144,16 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                     conn,
                     schema="public",
                     if_exists="append",
-                    index=False,
+                    index=True,
                     dtype={
+                        "id": UUID,
                         "image_data": LargeBinary,
-                        "floor_measure_id": UUID,
                         "type": String,
                     },
+                )
+
+                etl.insert_floor_measure_floor_measure_image_association(
+                    session, image_assoc_dict
                 )
 
     click.echo("Image ingestion complete")

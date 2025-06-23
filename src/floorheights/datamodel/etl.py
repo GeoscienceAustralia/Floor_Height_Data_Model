@@ -41,6 +41,7 @@ from floorheights.datamodel.models import (
     Method,
     address_point_building_association,
     floor_measure_dataset_association,
+    floor_measure_floor_measure_image_association,
 )
 
 
@@ -1028,6 +1029,30 @@ def insert_floor_measure_dataset_association(
     ]
     session.execute(
         insert(floor_measure_dataset_association).values(floor_measure_dataset_values)
+    )
+
+
+def insert_floor_measure_floor_measure_image_association(
+    session: Session, association_dict: list[dict]
+) -> None:
+    """
+    Insert records into the floor_measure_floor_measure_image_association table from a
+    FloorMeasure record id and a list of FloorMeasureImage ids.
+
+    Parameters
+    ----------
+    session : Session
+        SQLAlchemy session for database operations.
+    association_dict : list of dict
+        List of dictionaries containing 'floor_measure_id' and 'floor_measure_image_id'
+        pairs.
+
+    Returns
+    -------
+    None
+    """
+    session.execute(
+        insert(floor_measure_floor_measure_image_association).values(association_dict)
     )
 
 
