@@ -413,10 +413,10 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
                     "storey": feature.storey,
                     "floor_height_m": feature.floor_height_m,
                     "measure_lower": float(feature.measure_lower)
-                    if feature.measure_lower
+                    if feature.measure_lower is not None
                     else None,
                     "measure_upper": float(feature.measure_upper)
-                    if feature.measure_upper
+                    if feature.measure_upper is not None
                     else None,
                     "confidence": feature.confidence,
                     "aux_info": feature.aux_info,
