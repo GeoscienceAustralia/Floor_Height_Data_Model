@@ -902,7 +902,7 @@ def build_floor_measure_query(
         floor_measure_table.c[confidence_field].label("confidence"),
         literal(method_id).label("method_id"),
         build_aux_info_expression(
-            floor_measure_table, ["id", ffh_field, confidence_field, "geometry"]
+            floor_measure_table, ["id", ffh_field, confidence_field, "location"]
         ).label("aux_info"),
         building_id_field,
         floor_measure_table.c.location,
@@ -1099,6 +1099,8 @@ def build_denormalised_query() -> Select:
             FloorMeasure.storey,
             FloorMeasure.height.label("floor_height_m"),
             FloorMeasure.confidence,
+            func.lower(FloorMeasure.measure_range).label("measure_lower"),
+            func.upper(FloorMeasure.measure_range).label("measure_upper"),
             FloorMeasure.aux_info,
             Building.land_use_zone,
             Building.outline,

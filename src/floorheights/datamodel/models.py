@@ -1,22 +1,23 @@
-from geoalchemy2 import Geometry
-from sqlalchemy import (
-    create_engine,
-    Column,
-    String,
-    UUID,
-    Float,
-    Integer,
-    JSON,
-    LargeBinary,
-    Table,
-    ForeignKey,
-)
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
 import uuid
 
-from floorheights.datamodel.db_utils import create_database_url
+from geoalchemy2 import Geometry
+from sqlalchemy import (
+    JSON,
+    UUID,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Table,
+    create_engine,
+)
+from sqlalchemy.dialects.postgresql import NUMRANGE
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
 
+from floorheights.datamodel.db_utils import create_database_url
 
 Base = declarative_base()
 
@@ -110,6 +111,7 @@ class FloorMeasure(Base):
     storey = Column(Integer, nullable=False)
     height = Column(Float, nullable=False)
     confidence = Column(Float, nullable=True)
+    measure_range = Column(NUMRANGE, nullable=True)
     aux_info = Column(JSON, nullable=True)
     location = Column(Geometry(geometry_type="POINT", srid=7844), nullable=True)
 

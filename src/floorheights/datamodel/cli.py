@@ -12,6 +12,7 @@ import rasterio
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from shapely.geometry import box
 from sqlalchemy import JSON, UUID, LargeBinary, Numeric, String, Table, select
+from sqlalchemy.dialects.postgresql import NUMRANGE
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -852,7 +853,6 @@ def ingest_main_method_measures(
     method_gdf["aux_info"] = aux_info_df.apply(
         lambda row: json.dumps(row.to_dict()), axis=1
     )
-    # method_gdf = method_gdf.drop(columns=aux_info_df.columns, axis=1)
 
     session = SessionLocal()
     with session.begin():
@@ -922,6 +922,7 @@ def ingest_main_method_measures(
 @click.command()
 @click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to parquet file containing gap fill measures.")  # fmt: skip
 @click.option("--ffh-field", type=str, default="ensemble_ffh", help="Name of the first floor height field in the input parquet.")  # fmt: skip
+@click.option("--ffh-range-field", type=str, default="ensemble_range", help="Name of the first floor height range field.")  # fmt: skip
 @click.option("--confidence-field", type=str, default="ensemble_confidence", help="Name of the first floor height confidence field.")  # fmt: skip
 @click.option("--method-name",  type=str, default="Main Method - Ensemble", help="Name of the floor measure method.")  # fmt: skip
 @click.option("--dataset-name", type=str, default="FFH Model Output", help="Name of the floor measure dataset.")  # fmt: skip
@@ -930,6 +931,7 @@ def ingest_main_method_measures(
 def ingest_gap_fill_measures(
     input_file: click.Path,
     ffh_field: str,
+    ffh_range_field: str,
     confidence_field: str,
     method_name: str,
     dataset_name: str,
@@ -948,19 +950,26 @@ def ingest_gap_fill_measures(
     except Exception as error:
         raise click.exceptions.FileError(input_file, error)
 
-    if confidence_field is not None and confidence_field not in method_df.columns:
+    if ffh_field not in method_df.columns:
+        raise click.exceptions.BadParameter(
+            f"Field '{ffh_field}' not found in input parquet file"
+        )
+    if ffh_range_field not in method_df.columns:
+        raise click.exceptions.BadParameter(
+            f"Field '{ffh_range_field}' not found in input parquet file"
+        )
+    if confidence_field not in method_df.columns:
         raise click.exceptions.BadParameter(
             f"Field '{confidence_field}' not found in input parquet file"
         )
-    if confidence_field is not None:
-        method_df = method_df.rename(columns={confidence_field: "confidence"})
-    else:
-        method_df["confidence"] = None
 
     method_df = method_df.drop(columns=["geometry"])
     method_df["height"] = method_df[ffh_field]
     method_df = method_df[~method_df["height"].isna()]
     method_df["storey"] = 0
+    method_df = method_df.rename(
+        columns={confidence_field: "confidence", ffh_range_field: "measure_range"}
+    )
 
     # Cast building_id strings to UUIDs
     method_df["building_id"] = method_df["building_id"].apply(uuid.UUID)
@@ -978,6 +987,7 @@ def ingest_gap_fill_measures(
         columns=[
             "building_id",
             "height",
+            "measure_range",
             "storey",
             "confidence",
         ],
@@ -1017,6 +1027,7 @@ def ingest_gap_fill_measures(
                     "building_id": UUID,
                     "method_id": UUID,
                     "height": Numeric,
+                    "measure_range": NUMRANGE,
                     "aux_info": JSON,
                 },
                 method=etl.psql_insert_copy,
