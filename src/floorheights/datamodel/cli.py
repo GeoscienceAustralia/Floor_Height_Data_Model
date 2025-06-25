@@ -14,6 +14,7 @@ from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from shapely.geometry import box
 from sqlalchemy import JSON, UUID, LargeBinary, Numeric, String, Table, select
 from sqlalchemy.dialects.postgresql import NUMRANGE
+from sqlalchemy.exc import OperationalError, IntegrityError
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -1051,7 +1052,10 @@ def ingest_gap_fill_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
-def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
+@click.option("-c", "--chunksize", type=int, default=None, help="Number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
+def ingest_main_method_images(
+    pano_path: click.Path, lidar_path: click.Path, chunksize: int
+):
     """Ingest main methodology images
 
     Takes a path to Panorama and/or LIDAR images ingests them into the data model.
@@ -1098,17 +1102,9 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                 image_df["id"] = image_df[filename_field].apply(etl.generate_uuid)
 
                 # Get image filepaths
-                if image_type == "panorama":
-                    image_df[filename_field] = image_df[filename_field].apply(
-                        lambda filename: Path(image_path) / Path(filename).name
-                    )
-                else:
-                    # TODO Set lidar_clip_path to full path
-                    image_df[filename_field] = image_df[filename_field].apply(
-                        lambda filename: list(
-                            (Path(image_path) / Path(filename).name).glob("*")
-                        )[0]
-                    )
+                image_df[filename_field] = image_df[filename_field].apply(
+                    lambda filename: Path(image_path) / Path(filename).name
+                )
 
                 # Add additional fields
                 image_df["filename"] = image_df[filename_field].apply(
@@ -1141,18 +1137,32 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                     axis=1,
                 )
 
-                image_df.to_sql(
-                    "floor_measure_image",
-                    conn,
-                    schema="public",
-                    if_exists="append",
-                    index=True,
-                    dtype={
-                        "id": UUID,
-                        "image_data": LargeBinary,
-                        "type": String,
-                    },
-                )
+                try:
+                    image_df.to_sql(
+                        "floor_measure_image",
+                        conn,
+                        schema="public",
+                        if_exists="append",
+                        index=True,
+                        dtype={
+                            "id": UUID,
+                            "image_data": LargeBinary,
+                            "type": String,
+                        },
+                        chunksize=chunksize,
+                    )
+                except OperationalError:
+                    raise click.ClickException(
+                        "An error occurred while inserting images into the database. "
+                        "Try again with a smaller chunksize (e.g. 200) or check the "
+                        "database connection."
+                    )
+                except IntegrityError:
+                    raise click.ClickException(
+                        "An error occurred while inserting images into the database. "
+                        "This may be due to duplicate image IDs. Ensure that images "
+                        "have not already been ingested."
+                    )
 
                 etl.insert_floor_measure_floor_measure_image_association(
                     session, image_assoc_dict
