@@ -1230,6 +1230,7 @@ def download_images_s3(
         type_output_dir.mkdir(parents=True, exist_ok=True)
 
         image_df = image_df[~image_df[uri_field].isna()]
+        image_df = image_df.drop_duplicates(subset=[uri_field])
 
         with click.progressbar(
             image_df[uri_field], label=f"Downloading {image_type} images"
