@@ -844,6 +844,7 @@ def ingest_main_method_measures(
     # Create aux_info json column
     aux_info_df = method_gdf.drop(
         columns=[
+            "id",
             "building_id",
             "storey",
             "location",
