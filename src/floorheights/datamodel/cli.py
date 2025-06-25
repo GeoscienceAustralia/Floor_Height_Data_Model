@@ -1246,9 +1246,11 @@ def download_images_s3(
                     local_file_path = type_output_dir / Path(s3_key).name
                     s3.download_file(bucket_name, s3_key, str(local_file_path))
                 except NoCredentialsError:
-                    raise click.UsageError("AWS credentials not found.")
+                    raise click.ClickException("AWS credentials not found.")
                 except PartialCredentialsError:
-                    raise click.UsageError("Incomplete AWS credentials configuration.")
+                    raise click.ClickException(
+                        "Incomplete AWS credentials configuration."
+                    )
                 except Exception as error:
                     click.echo(f"Failed to download {s3_key}: {error}", err=True)
 
