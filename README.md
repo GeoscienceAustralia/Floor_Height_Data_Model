@@ -1,6 +1,6 @@
-# GA Floor Height Data Model
+# GA Floor Heights Data Model
 
-Data model and web application for the Geoscience Australia (GA) floor height project. Includes;
+Data model and web application for the Geoscience Australia (GA) floor heights project. Includes;
 
 - Model definition
   - Shown in figure below
@@ -15,7 +15,9 @@ Data model and web application for the Geoscience Australia (GA) floor height pr
 
 ## Getting started
 
-Create the `.env` file, this includes all the environment variables used by the application. The default values in this example file should be changed (password at least).
+Create the `.env` file, this includes all the environment variables used by the application. On first run, the variables are used to setup the postgres database. The variables are also used by the CLI to connect to a local or remote database.
+
+The default values the example file should be changed (password at least).
 
     cp .env.example .env
 
@@ -24,8 +26,8 @@ Ensure the following environment variables are set:
 - POSTGRES_USER - user with access to database
 - POSTGRES_PASSWORD - password for user
 - POSTGRES_DB - name of the database
-- POSTGRES_HOST - database hostname (e.g.; `localhost` if running postgres locally)
-- POSTGRES_PORT - database port (e.g. `5432` if running postgres locally, but can be used for accessing a database through a SSH tunnel. )
+- POSTGRES_HOST - database hostname (e.g. `localhost` if running postgres locally)
+- POSTGRES_PORT - database port (e.g. `5432` if running postgres locally, but can be used for accessing a database through a SSH tunnel)
 
 Build the docker images:
 
@@ -81,14 +83,14 @@ The CLI tool supports the ingestion and export of data to/from the data model. I
     ingest-nexis-measures        Ingest NEXIS floor height measures
     ingest-validation-measures   Ingest validation floor height measures
     download-images-s3           Download main methodology images from S3
-    ingest-main-method-measures  Ingest main methodology floor height JSON
-    ingest-gap-fill-measures     Ingest gap fill measures from floor height JSON
+    ingest-main-method-measures  Ingest main methodology floor height parquet
+    ingest-gap-fill-measures     Ingest gap fill measures from floor height parquet
     ingest-main-method-images    Ingest main methodology images
     export-ogr-file              Export an OGR file of the data model
 
 Specific help for each command can be shown with the `--help` option. For example, `fh-cli ingest-address-points --help`.
 
-An example of a complete ingestion for the Wagga Wagga area of interest is provided in [`./src/examples/data_ingestion_example.ipynb`](./src/examples/data_ingestion_example.ipynb).
+An example of a complete ingestion for each of the areas of interest is provided in [`./src/examples/data_ingestion_example.ipynb`](./src/examples/data_ingestion_example.ipynb) notebook.
 
 ### Using as a library
 
@@ -113,35 +115,26 @@ Run the script. This will list up to 10 address points that have been added to t
 
 ## Changing data model schema
 
-Alembic is used to automatically generate database migrations scripts from changes
-to the SQLAlchemy model definitions. The steps required to modify the schema are as
-follows.
+Alembic is used to automatically generate database migrations scripts from changes to the SQLAlchemy model definitions. The steps required to modify the schema are as follows.
 
-First, make changes to the SQLAlchemy model definition by changing the models defined
-in [`models.py`](./src/floorheights/datamodel/models.py).
+First, make changes to the SQLAlchemy model definition by changing the models defined in [`./src/floorheights/datamodel/models.py`](./src/floorheights/datamodel/models.py).
 
 Run the following command to automatically generate a new migration script.
 
     docker compose run app alembic revision --autogenerate -m "notes on migration changes"
 
-This command will generate a new file in [`versions`](./src/alembic/versions/). This should be
-checked over to ensure it is as expected. Some migrations, for example where data may need
-to be migrated between tables, will require custom code. **Although
-programatically generated, all migration scripts should be included in git.**
+This command will generate a new file in [`./src/alembic/versions`](./src/alembic/versions/). This should be checked over to ensure it is as expected. Some migrations, for example where data may need to be migrated between tables, will require custom code. **Although programmatically generated, all migration scripts should be included in git.**
 
-To update the database with this new migration run the following. This will run all pending
-migrations.
+To update the database with this new migration run the following. This will run all pending migrations.
 
     docker compose run app alembic upgrade head
 
 ### Reverting schema changes
 
-Say a bad migration was generated and applied to the database. The last migration can be
-reverted by running
+Say a bad migration was generated and applied to the database. The last migration can be reverted by running
 
     docker compose run app alembic downgrade -1
 
-The bad migration file should then be deleted from the ['versions'](./src/alembic/versions/)
-folder.
+The bad migration file should then be deleted from the ['./src/alembic/versions'](./src/alembic/versions/) folder.
 
 [Alembic provides many options for dealing with these issues](https://alembic.sqlalchemy.org/).
