@@ -1,6 +1,7 @@
 import json
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse
 
 import boto3
 import click
@@ -13,6 +14,7 @@ from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from shapely.geometry import box
 from sqlalchemy import JSON, UUID, LargeBinary, Numeric, String, Table, select
 from sqlalchemy.dialects.postgresql import NUMRANGE
+from sqlalchemy.exc import OperationalError, IntegrityError
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
@@ -843,6 +845,7 @@ def ingest_main_method_measures(
     # Create aux_info json column
     aux_info_df = method_gdf.drop(
         columns=[
+            "id",
             "building_id",
             "storey",
             "location",
@@ -870,6 +873,11 @@ def ingest_main_method_measures(
             # Filter method_gdf for the current method
             method_gdf_filtered = method_gdf[method_gdf[method_field].notna()].copy()
             method_gdf_filtered["height"] = method_gdf_filtered[method_field]
+
+            # Drop duplicates based on building_id and height
+            method_gdf_filtered = method_gdf_filtered.drop_duplicates(
+                subset=["building_id", "height"]
+            )
 
             if method_gdf_filtered.empty:
                 click.echo(f"No records found for {method_field}, skipping...")
@@ -999,14 +1007,20 @@ def ingest_gap_fill_measures(
     )
     method_df = method_df.drop(columns=aux_info_df.columns, axis=1)
 
+    # Drop duplicates based on building_id and height
+    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
+
+    # Only keep measure with highest confidence
+    method_df = method_df.loc[method_df.groupby("building_id")["confidence"].idxmax()]
+
+    # Create UUID index
+    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
+    method_df = method_df.set_index(["id"])
+
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         click.echo("Inserting records into floor_measure table...")
-
-        # Create UUID index
-        method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
-        method_df = method_df.set_index(["id"])
 
         method_id = etl.get_or_create_method_id(session, method_name)
         method_dataset_id = etl.get_or_create_dataset_id(
@@ -1049,7 +1063,10 @@ def ingest_gap_fill_measures(
 @click.command()
 @click.option("--pano-path", type=click.Path(exists=True), help="Path to folder containing panorama images.")  # fmt: skip
 @click.option("--lidar-path", type=click.Path(exists=True), help="Path to folder containing LIDAR images.")  # fmt: skip
-def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
+@click.option("-c", "--chunksize", type=int, default=None, help="Number of rows in each batch to be written at a time. By default, all rows will be written at once.")  # fmt: skip
+def ingest_main_method_images(
+    pano_path: click.Path, lidar_path: click.Path, chunksize: int
+):
     """Ingest main methodology images
 
     Takes a path to Panorama and/or LIDAR images ingests them into the data model.
@@ -1092,19 +1109,13 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
 
                 image_df = measure_df[["id", filename_field]].copy()
                 image_df = image_df.rename(columns={"id": "floor_measure_id"})
+                # Generate UUIDs based on image filenames
+                image_df["id"] = image_df[filename_field].apply(etl.generate_uuid)
 
                 # Get image filepaths
-                if image_type == "panorama":
-                    image_df[filename_field] = image_df[filename_field].apply(
-                        lambda filename: Path(image_path) / Path(filename).name
-                    )
-                else:
-                    # TODO Set lidar_clip_path to full path
-                    image_df[filename_field] = image_df[filename_field].apply(
-                        lambda filename: list(
-                            (Path(image_path) / Path(filename).name).glob("*")
-                        )[0]
-                    )
+                image_df[filename_field] = image_df[filename_field].apply(
+                    lambda filename: Path(image_path) / Path(filename).name
+                )
 
                 # Add additional fields
                 image_df["filename"] = image_df[filename_field].apply(
@@ -1112,31 +1123,60 @@ def ingest_main_method_images(pano_path: click.Path, lidar_path: click.Path):
                 )
                 image_df["type"] = image_type
 
+                # Create association table dataframe
+                image_assoc_df = (
+                    image_df[["floor_measure_id", "id"]].rename(
+                        columns={"id": "floor_measure_image_id"}
+                    )
+                ).copy()
+
+                # Convert to a list of dictionaries
+                image_assoc_dict = image_assoc_df.to_dict(orient="records")
+
+                # Drop duplicates based on 'id' to ensure only unique images are ingested
+                image_df = image_df.drop_duplicates(subset=["id"])
+                image_df = image_df.set_index("id")
+
                 # Create byte arrays of the images
                 image_df["image_data"] = image_df[filename_field].apply(
                     lambda filename: image_to_bytearray(filename)
                 )
 
                 image_df = image_df[image_df["image_data"].notna()]
-
                 image_df = image_df.drop(
-                    columns=[
-                        filename_field,
-                    ],
+                    columns=[filename_field, "floor_measure_id"],
                     axis=1,
                 )
 
-                image_df.to_sql(
-                    "floor_measure_image",
-                    conn,
-                    schema="public",
-                    if_exists="append",
-                    index=False,
-                    dtype={
-                        "image_data": LargeBinary,
-                        "floor_measure_id": UUID,
-                        "type": String,
-                    },
+                try:
+                    image_df.to_sql(
+                        "floor_measure_image",
+                        conn,
+                        schema="public",
+                        if_exists="append",
+                        index=True,
+                        dtype={
+                            "id": UUID,
+                            "image_data": LargeBinary,
+                            "type": String,
+                        },
+                        chunksize=chunksize,
+                    )
+                except OperationalError:
+                    raise click.ClickException(
+                        "An error occurred while inserting images into the database. "
+                        "Try again with a smaller chunksize (e.g. 200) or check the "
+                        "database connection."
+                    )
+                except IntegrityError:
+                    raise click.ClickException(
+                        "An error occurred while inserting images into the database. "
+                        "This may be due to duplicate image IDs. Ensure that images "
+                        "have not already been ingested."
+                    )
+
+                etl.insert_floor_measure_floor_measure_image_association(
+                    session, image_assoc_dict
                 )
 
     click.echo("Image ingestion complete")
@@ -1176,108 +1216,65 @@ def export_ogr_file(output_file: str, normalise_aux_info: bool, buildings_only: 
 
 
 @click.command()
-@click.option("-i", "--input-json", required=True, type=click.File(), help="Path to FFH model output JSON.")  # fmt: skip
-@click.option("--s3-uri", required=True, type=str, help="Root S3 URI path containing the images.")  # fmt: skip
-@click.option("--areas", type=click.Choice(["Wagga", "Tweed", "Launceston"], case_sensitive=False), default=["Wagga", "Tweed", "Launceston"], multiple=True, help="The areas to download associated images, option can be used multiple times to download multiple areas.")  # fmt: skip
+@click.option("-i", "--input-file", required=True, type=click.Path(file_okay=True, dir_okay=False), help="Path to FFH model output parquet file.")  # fmt: skip
+@click.option("--areas", type=click.Choice(["wagga", "tweed", "launceston"], case_sensitive=False), default=["Wagga", "Tweed", "Launceston"], multiple=True, help="The areas to download associated images, option can be used multiple times to download multiple areas.")  # fmt: skip
 @click.option("--type", type=click.Choice(["pano", "lidar"], case_sensitive=False), default=["pano", "lidar"], multiple=True, help="The types of images to download, option can be used multiple times to download multiple types.")  # fmt: skip
 @click.option("-o", "--output-dir", required=True, type=click.Path(file_okay=False, dir_okay=True, writable=True), help="Local directory to save downloaded images, images will be download into sub directories for each image type.")  # fmt: skip
 def download_images_s3(
-    input_json: click.File,
-    s3_uri: str,
+    input_file: click.Path,
     areas: list,
     type: list,
     output_dir: click.Path,
 ):
     """Download main methodology images from S3
 
-    Downloads images from an S3 bucket based on the provided JSON file and saves them to
-    a local directory.
-
-    Requires the S3 URI to be in the format 's3://bucket-name/prefix/', and is the path
-    to the root of each region containing the images.
+    Downloads images from an S3 URIs in the provided parquet file and saves them to a
+    local directory.
 
     AWS credentials must be configured in the environment or via the AWS CLI.
     """
     click.secho("Downloading images from S3", bold=True)
     try:
-        json_data = json.load(input_json)
-        json_df = pd.DataFrame(json_data["buildings"])
+        image_df = pd.read_parquet(input_file)
     except Exception as error:
-        raise click.exceptions.FileError(input_json.name, error)
+        raise click.exceptions.FileError(input_file, error)
 
-    json_df = json_df[~json_df["floor_height_consensus"].isna()]
-    json_df = json_df.drop_duplicates(subset=["building_id", "floor_height_consensus"])
-
-    json_df = json_df[json_df.region.isin(areas)]
+    image_df = image_df[image_df.region.isin(areas)]
 
     s3 = boto3.client("s3")
-    bucket_name, prefix = s3_uri.strip("/").replace("s3://", "").split("/", 1)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for image_type in type:
-        folder = "clips" if image_type == "pano" else "3d_point_clouds"
+        uri_field = "clip_path" if image_type == "pano" else "lidar_clip_path"
         type_output_dir = output_dir / (f"{image_type}_images")
         type_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create image prefixes for panorama images
-        if image_type == "pano":
-            json_df["image_prefixes"] = (
-                json_df.region.astype(str)
-                + "/"
-                + folder
-                + "/"
-                + json_df.building_id.astype(str)
-                + "_"
-                + json_df.gnaf_id.astype(str)
-                + "/"
-                + json_df.best_view_pano_filename.astype(str).apply(
-                    lambda x: Path(x).stem
-                )
-            )
-        # Create image prefixes for lidar images
-        elif image_type == "lidar":
-            json_df["image_prefixes"] = (
-                json_df.region.astype(str)
-                + "/"
-                + folder
-                + "/"
-                + json_df.building_id.astype(str)
-                + "_"
-                + json_df.gnaf_id.astype(str)
-                + "/"
-                + json_df.building_id.astype(str)
-                + "_"
-                + json_df.gnaf_id.astype(str)
-                + "_3d_point_cloud.jpg"
-            )
+        image_df = image_df[~image_df[uri_field].isna()]
+        image_df = image_df.drop_duplicates(subset=[uri_field])
 
         with click.progressbar(
-            json_df["image_prefixes"], label=f"Downloading {image_type} images"
+            image_df[uri_field], label=f"Downloading {image_type} images"
         ) as bar:
-            for image_prefix in bar:
-                s3_key_prefix = f"{prefix}/{image_prefix}"
+            for image in bar:
+                # Get bucket name and S3 key from the URI
+                parsed = urlparse(image)
+                bucket_name = parsed.netloc
+                s3_key = parsed.path.lstrip("/")
+
                 try:
-                    response = s3.list_objects_v2(
-                        Bucket=bucket_name, Prefix=s3_key_prefix
-                    )
-                    if "Contents" in response:
-                        for obj in response["Contents"]:
-                            s3_key = obj["Key"]
-                            local_file_path = type_output_dir / Path(s3_key).name
-                            s3.download_file(bucket_name, s3_key, str(local_file_path))
-                    else:
-                        click.echo(
-                            f"Warning: No images found for prefix {s3_key_prefix}",
-                            err=True,
-                        )
+                    # Download the file from S3
+                    local_file_path = type_output_dir / Path(s3_key).name
+                    s3.download_file(bucket_name, s3_key, str(local_file_path))
                 except NoCredentialsError:
-                    raise click.UsageError("AWS credentials not found.")
+                    raise click.ClickException("AWS credentials not found.")
                 except PartialCredentialsError:
-                    raise click.UsageError("Incomplete AWS credentials configuration.")
+                    raise click.ClickException(
+                        "Incomplete AWS credentials configuration."
+                    )
                 except Exception as error:
-                    click.echo(f"Failed to download {s3_key_prefix}: {error}", err=True)
+                    click.echo(f"Failed to download {s3_key}: {error}", err=True)
 
     click.echo("Image download complete")
 

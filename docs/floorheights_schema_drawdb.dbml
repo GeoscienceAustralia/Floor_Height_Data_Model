@@ -66,6 +66,11 @@ Table floor_measure_image {
 	floor_measure_id uuid [ not null ]
 }
 
+Table floor_measure_floor_measure_image_association {
+	floor_measure_id uuid [ pk, not null, unique ]
+	floor_measure_image_id uuid [ pk, not null ]
+}
+
 Ref fk_address_point_id_address_point_building_association {
 	address_point.id < address_point_building_association.address_point_id [ delete: no action, update: no action ]
 }
@@ -90,6 +95,10 @@ Ref fk_floor_measure_dataset_association_floor_measure_id_floor_measure {
 	floor_measure_dataset_association.floor_measure_id > floor_measure.dataset_group_id [ delete: no action, update: no action ]
 }
 
-Ref fk_floor_measure_id_floor_measure_image {
-	floor_measure.id < floor_measure_image.floor_measure_id [ delete: no action, update: no action ]
+Ref fk_floor_measure_floor_measure_image_association_floor_measure_id_floor_measure {
+	floor_measure_floor_measure_image_association.floor_measure_id > floor_measure.id [ delete: no action, update: no action ]
+}
+
+Ref fk_floor_measure_floor_measure_image_association_floor_measure_image_id_floor_measure_image {
+	floor_measure_floor_measure_image_association.floor_measure_image_id > floor_measure_image.id [ delete: no action, update: no action ]
 }

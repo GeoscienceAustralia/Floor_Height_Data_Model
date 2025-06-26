@@ -240,6 +240,18 @@ def list_methods(
 
 
 @app.get(
+    "/api/datasets/",
+    response_model=list[str],
+)
+def list_datasets(
+    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
+):
+    if Authentication:
+        pass
+    return [r[0] for r in db.query(Dataset.name).distinct().order_by(Dataset.name)]
+
+
+@app.get(
     "/api/legend-graduated-values/",
     response_model=GraduatedLegendResponse,
 )
@@ -357,18 +369,6 @@ def get_legend_categorised_values(
     return sorted_result_list
 
 
-@app.get(
-    "/api/datasets/",
-    response_model=list[str],
-)
-def list_datasets(
-    db: sqlalchemy.orm.Session = Depends(get_db), Authentication=Depends(authenticated)
-):
-    if Authentication:
-        pass
-    return [r[0] for r in db.query(Dataset.name).distinct().order_by(Dataset.name)]
-
-
 def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
     try:
         query = (
@@ -438,7 +438,7 @@ def query_geojson(db: sqlalchemy.orm.Session = Depends(get_db)):
     "/api/image-ids/{building_id}",
     response_model=list[uuid.UUID],
 )
-def get_pano_image_ids(
+def get_image_ids(
     building_id: str,
     type: str,
     db: sqlalchemy.orm.Session = Depends(get_db),
@@ -457,11 +457,11 @@ def get_pano_image_ids(
     query = (
         select(FloorMeasureImage.id)
         .select_from(FloorMeasureImage)
-        .join(FloorMeasure)
+        .join(FloorMeasure, FloorMeasureImage.floor_measures)
         .join(Building)
         .filter(Building.id == uuid_id)
         .filter(FloorMeasureImage.type == type)
-    )
+    ).distinct()
 
     results = db.execute(query).all()
 
@@ -573,7 +573,7 @@ def get_image(
             FloorMeasureImage.image_data, FloorMeasureImage.type, FloorMeasure.aux_info
         )
         .select_from(FloorMeasureImage)
-        .join(FloorMeasure)
+        .join(FloorMeasure, FloorMeasureImage.floor_measures)
         .filter(FloorMeasureImage.id == uuid_id)
     )
     result = db.execute(query).fetchone()
