@@ -874,6 +874,11 @@ def ingest_main_method_measures(
             method_gdf_filtered = method_gdf[method_gdf[method_field].notna()].copy()
             method_gdf_filtered["height"] = method_gdf_filtered[method_field]
 
+            # Drop duplicates based on building_id and height
+            method_gdf_filtered = method_gdf_filtered.drop_duplicates(
+                subset=["building_id", "height"]
+            )
+
             if method_gdf_filtered.empty:
                 click.echo(f"No records found for {method_field}, skipping...")
                 continue
@@ -1002,14 +1007,20 @@ def ingest_gap_fill_measures(
     )
     method_df = method_df.drop(columns=aux_info_df.columns, axis=1)
 
+    # Drop duplicates based on building_id and height
+    method_df = method_df.drop_duplicates(subset=["building_id", "height"])
+
+    # Only keep measure with highest confidence
+    method_df = method_df.loc[method_df.groupby("building_id")["confidence"].idxmax()]
+
+    # Create UUID index
+    method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
+    method_df = method_df.set_index(["id"])
+
     session = SessionLocal()
     with session.begin():
         conn = session.connection()
         click.echo("Inserting records into floor_measure table...")
-
-        # Create UUID index
-        method_df["id"] = [uuid.uuid4() for _ in range(len(method_df.index))]
-        method_df = method_df.set_index(["id"])
 
         method_id = etl.get_or_create_method_id(session, method_name)
         method_dataset_id = etl.get_or_create_dataset_id(
