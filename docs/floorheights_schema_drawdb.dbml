@@ -1,0 +1,104 @@
+Table address_point {
+	id uuid [ pk, not null, unique ]
+	location point [ not null ]
+	gnaf_id varchar [ not null ]
+	address varchar [ not null ]
+	geocode_type varchar
+	primary_secondary varchar
+}
+
+Table building {
+	id uuid [ pk, not null, unique ]
+	outline polygon [ not null ]
+	min_height_ahd decimal [ not null ]
+	max_height_ahd decimal [ not null ]
+	land_use_zone varchar
+}
+
+Table address_point_building_association {
+	address_point_id uuid [ pk, not null ]
+	building_id uuid [ pk, not null ]
+
+	indexes {
+		(address_point_id, building_id) [ name: 'address_point_building_association_index_0' ]
+	}
+}
+
+Table dataset {
+	id uuid [ pk, not null, unique ]
+	name varchar [ not null ]
+	description varchar
+	source varchar
+}
+
+Table method {
+	id uuid [ pk, not null, unique ]
+	name varchar [ not null ]
+}
+
+Table floor_measure {
+	id uuid [ pk, not null, unique ]
+	storey integer [ not null ]
+	height decimal [ not null ]
+	measure_range numrange
+	confidence decimal
+	building_id uuid [ not null ]
+	method_id uuid [ not null ]
+	dataset_group_id uuid [ not null ]
+	aux_info json
+	location point
+}
+
+Table floor_measure_dataset_association {
+	floor_measure_id uuid [ pk, not null ]
+	dataset_id uuid [ pk, not null ]
+
+	indexes {
+		(floor_measure_id, dataset_id) [ name: 'floor_measure_dataset_association_index_1' ]
+	}
+}
+
+Table floor_measure_image {
+	id uuid [ pk, not null, unique ]
+	filename varchar [ not null ]
+	image_data bytea [ not null ]
+	type varchar
+	floor_measure_id uuid [ not null ]
+}
+
+Table floor_measure_floor_measure_image_association {
+	floor_measure_id uuid [ pk, not null, unique ]
+	floor_measure_image_id uuid [ pk, not null ]
+}
+
+Ref fk_address_point_id_address_point_building_association {
+	address_point.id < address_point_building_association.address_point_id [ delete: no action, update: no action ]
+}
+
+Ref fk_building_id_address_point_building_association {
+	building.id < address_point_building_association.building_id [ delete: no action, update: no action ]
+}
+
+Ref fk_floor_measure_building_id_building {
+	floor_measure.building_id > building.id [ delete: no action, update: no action ]
+}
+
+Ref fk_method_id_floor_measure {
+	method.id < floor_measure.method_id [ delete: no action, update: no action ]
+}
+
+Ref fk_floor_measure_dataset_association_dataset_id_dataset {
+	floor_measure_dataset_association.dataset_id > dataset.id [ delete: no action, update: no action ]
+}
+
+Ref fk_floor_measure_dataset_association_floor_measure_id_floor_measure {
+	floor_measure_dataset_association.floor_measure_id > floor_measure.dataset_group_id [ delete: no action, update: no action ]
+}
+
+Ref fk_floor_measure_floor_measure_image_association_floor_measure_id_floor_measure {
+	floor_measure_floor_measure_image_association.floor_measure_id > floor_measure.id [ delete: no action, update: no action ]
+}
+
+Ref fk_floor_measure_floor_measure_image_association_floor_measure_image_id_floor_measure_image {
+	floor_measure_floor_measure_image_association.floor_measure_image_id > floor_measure_image.id [ delete: no action, update: no action ]
+}

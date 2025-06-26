@@ -1,39 +1,34 @@
 <script setup lang="ts">
-import { ref } from "vue";
 import Panel from "primevue/panel";
 import Select from "primevue/select";
 import { useToast } from "primevue/usetoast";
+import { ref } from "vue";
 import { MapLocation } from "./types.ts";
 
 const toast = useToast();
-const showMenu = ref(false);
 
-// Toggle the menu visibility
-const setMenuVisibility = () => {
-  showMenu.value = !showMenu.value;
-};
+const showMenu = ref(false);
+const selectedMapLocation = ref<MapLocation | null>();
+const isFetchingGeoJSON = ref<boolean>(false);
 
 const props = defineProps<{
   options: MapLocation[];
-  modelValue: MapLocation | null;
 }>();
 
 const emit = defineEmits<{
-  (event: "update:modelValue", value: MapLocation | null): void;
-  (event: "change", value: MapLocation): void;
+  updateMapLocation: [newMapLocation: MapLocation];
 }>();
 
-const selectedMapLocation = ref<MapLocation | null>(props.modelValue);
+const toggleMenuVisibility = () => {
+  showMenu.value = !showMenu.value;
+};
 
-// Method to handle dropdown change
-const handleChange = () => {
+const emitNewMapLocation = () => {
   if (selectedMapLocation.value) {
-    emit("update:modelValue", selectedMapLocation.value);
-    emit("change", selectedMapLocation.value);
+    emit("updateMapLocation", selectedMapLocation.value);
   }
 };
 
-// Method to get a timestamped filename
 const getTimestampedFilename = (): string => {
   const now = new Date();
   const YYYmmdd = now.toISOString().slice(0, 10).replace(/-/g, "");
@@ -41,14 +36,13 @@ const getTimestampedFilename = (): string => {
   return `res_ffh_${YYYmmdd}_${hhmmss}.geojson`;
 };
 
-const isFetchingGeoJSON = ref<boolean>(false);
 const fetchGeoJSON = async () => {
   isFetchingGeoJSON.value = true;
   try {
     // Fetch GeoJSON file
     const response = await fetch(`api/geojson/`);
     const geojson = await response.json();
-    const blob = new Blob([JSON.stringify(geojson)], {
+    const blob = new Blob([JSON.stringify(geojson, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -81,51 +75,33 @@ const fetchGeoJSON = async () => {
 </script>
 
 <template>
-  <div id="menu" class="flex flex-col gap-2 flex-1">
-    <Button
-      @click="setMenuVisibility"
-      :icon="showMenu ? 'pi pi-times' : 'pi pi-bars'"
-      class="p-button self-end"
-    />
-    <Panel v-if="showMenu" class="flex-none">
-      <template #header>
-        <div
-          class="flex items-center gap-2"
-          style="margin-bottom: -20px; width: 100%"
-        >
-          <i class="pi pi-map-marker" style="font-size: 1rem"></i>
-          <span class="font-bold">Location</span>
-          <Select
-            v-model="selectedMapLocation"
-            :options="options"
-            optionLabel="label"
-            placeholder="Select a location"
-            class="w-full"
-            @change="handleChange"
-          />
-        </div>
-      </template>
-    </Panel>
-    <Panel v-if="showMenu" class="flex-none">
-      <template #header>
-        <div
-          class="flex items-center gap-2"
-          style="margin-bottom: -20px; width: 100%"
-        >
-          <i class="pi pi-map" style="font-size: 1rem"></i>
-          <span class="font-bold">Export</span>
-          <Button
-            type="button"
-            label="GeoJSON"
-            icon="pi pi-download"
-            style="width: 150px"
-            class="mx-auto"
-            @click="fetchGeoJSON"
-            :loading="isFetchingGeoJSON"
-          />
-        </div>
-      </template>
-    </Panel>
+  <div id="menu" class="flex flex-row gap-2 flex-1">
+    <div v-if="showMenu" id="overlay" class="flex flex-col gap-2 flex-1">
+      <Panel class="flex-none">
+        <template #header>
+          <div class="flex items-center gap-2" style="margin-bottom: -20px; width: 100%">
+            <i class="pi pi-map-marker" style="font-size: 1rem"></i>
+            <span class="font-bold">Location</span>
+            <Select v-model="selectedMapLocation" :options="props.options" optionLabel="label"
+              placeholder="Select a location" class="w-full" @change="emitNewMapLocation" />
+          </div>
+        </template>
+      </Panel>
+      <Panel v-if="showMenu" class="flex-none">
+        <template #header>
+          <div class="flex items-center gap-2" style="margin-bottom: -20px; width: 100%">
+            <i class="pi pi-map" style="font-size: 1rem"></i>
+            <span class="font-bold">Export</span>
+            <Button type="button" label="GeoJSON" icon="pi pi-download" style="width: 150px" class="mx-auto"
+              @click="fetchGeoJSON" :loading="isFetchingGeoJSON" />
+          </div>
+        </template>
+      </Panel>
+    </div>
+    <div class="flex-none">
+      <Button @click="toggleMenuVisibility" :icon="showMenu ? 'pi pi-times' : 'pi pi-bars'"
+        size="small" class="button"/>
+    </div>
   </div>
 </template>
 
@@ -133,9 +109,17 @@ const fetchGeoJSON = async () => {
 #menu {
   position: absolute;
   top: 20px;
-  right: 20px;
-  max-height: calc(100vh - 40px);
+  right: 10px;
+  z-index: 1;
+}
+
+#overlay {
   width: 400px;
   z-index: 1;
+}
+
+.button{
+  width: 2rem;
+  height: 2rem;
 }
 </style>

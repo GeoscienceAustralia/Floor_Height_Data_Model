@@ -27,9 +27,9 @@ defineProps({
       <div class="subheading"> Height (m): </div>
       <div> {{ floorMeasure?.height.toFixed(3) }} </div>
     </div>
-    <div class="flex flex-col gap-0">
-      <div class="subheading"> Accuracy: </div>
-      <div> {{ floorMeasure?.accuracy_measure }} </div>
+    <div v-if="floorMeasure?.confidence" class="flex flex-col gap-0">
+      <div class="subheading"> Confidence: </div>
+      <div> {{ floorMeasure?.confidence.toFixed(3) }} </div>
     </div>
     <Divider v-if="!isLast" />
   </div>

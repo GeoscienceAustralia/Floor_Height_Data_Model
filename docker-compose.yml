@@ -25,7 +25,7 @@ services:
         condition: service_healthy
     environment:
       - POSTGRES_HOST=postgres
-    command: ["python", "-m", "floorheights.datamodel.cli"]
+    command: ["fh-cli"]
 
   martin:
     image: ghcr.io/maplibre/martin
@@ -33,7 +33,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       # - RUST_LOG=debug
     ports:
-      - 3000:3000
+      - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,14 +41,29 @@ services:
   frontend-dev:
     build:
       context: ./frontend
+      target: builder
     volumes:
       - ./frontend/floor-heights:/app
     ports:
-      - '5173:5173'
+      - "5173:5173"
     command: bash -c "npm install && npm run dev -- --host"
     depends_on:
       - martin
       - backend-dev
+    profiles:
+      - dev
+
+  frontend-prod:
+    build:
+      context: ./frontend
+      target: nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - martin
+      - backend-prod
+    profiles:
+      - prod
 
   backend-dev:
     build:
@@ -58,8 +73,9 @@ services:
       - .env
     environment:
       - POSTGRES_HOST=postgres
+      - MAPS_HOST=http://martin:3000/
     ports:
-      - 8080:8080
+      - "8080:8080"
     volumes:
       - ./backend/app:/code/app
       - ./src:/code/floor-heights
@@ -67,6 +83,26 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    profiles:
+      - dev
+
+  backend-prod:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - MAPS_HOST=http://martin:3000/
+    ports:
+      - "4001:4001"
+    command: uvicorn app.main:app --proxy-headers --host 0.0.0.0 --port 4001
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - prod
 
 volumes:
   postgres_data:

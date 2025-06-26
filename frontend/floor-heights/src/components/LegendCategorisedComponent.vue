@@ -1,21 +1,14 @@
 <script setup lang="ts">
-import type { PropType } from 'vue';
 
-defineProps({
-  legendObject: {
-    type: Object as PropType<Record<string, string>>,
-    required: true,
-  },
-  fillOption: {
-    type: String as PropType<String | null>,
-    default: null,
-  },
-});
+const props = defineProps<{
+  legendObject: Record<string, string>;
+  fillOption: String | null;
+}>();
 </script>
 
 <template>
-  <span class="subheading">{{ fillOption }}</span>
-  <div v-for="(color, label) in legendObject" :key="label" class="legend-item">
+  <span class="subheading">{{ props.fillOption }}</span>
+  <div v-for="(color, label) in props.legendObject" :key="label" class="legend-item">
     <span class="color-box" :style="{ backgroundColor: color }"></span>
     <span class="label">{{ label }}</span>
   </div>
@@ -34,6 +27,7 @@ defineProps({
   border-radius: 4px;
   margin-right: 8px;
   opacity: 0.8;
+  flex-shrink: 0;
 }
 
 .subheading {

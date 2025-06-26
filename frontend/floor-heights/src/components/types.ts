@@ -18,7 +18,7 @@ interface FloorMeasure {
   id: string;
   storey: number;
   height: number;
-  accuracy_measure: number;
+  confidence: number | null;
   aux_info?: Record<string, any> | null;
   method: string;
   datasets: string[];
@@ -29,9 +29,15 @@ interface MapLocation {
   coordinates: LngLat;
 }
 
+interface GraduatedFillLegend {
+  min: number | null;
+  max: number | null;
+}
+
 export type {
   AddressPoint,
   Building,
   FloorMeasure,
-  MapLocation
+  MapLocation,
+  GraduatedFillLegend
 };

@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+
 class LogConfig(BaseModel):
     """Logging configuration to be set for the server"""
 
@@ -23,7 +24,6 @@ class LogConfig(BaseModel):
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stderr",
         },
-
     }
     loggers: dict = {
         LOGGER_NAME: {"handlers": ["default"], "level": LOG_LEVEL},

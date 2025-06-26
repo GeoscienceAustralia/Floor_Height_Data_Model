@@ -5,7 +5,7 @@ class FloorMeasureBase(BaseModel):
     id: UUID4
     storey: int
     height: float
-    accuracy_measure: float
+    confidence: float | None
     aux_info: dict | None = None
 
 
